@@ -1,6 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, Mock
-
+from unittest.mock import AsyncMock
 from app.pipeline.context.manager import ContextManager
 
 
@@ -9,12 +8,7 @@ async def test_build():
     manager = ContextManager()
 
     manager.tr.aretrieve = AsyncMock(return_value=[])
-    manager._fetch_ltm = AsyncMock(return_value=[])
-    manager._maybe_compact = AsyncMock()
-
-    manager._enforce_budget = Mock(
-        side_effect=lambda messages: messages
-    )
+    manager.ltm.search_memory_texts = AsyncMock(return_value=[])
 
     manager.ctx = [
         {
@@ -33,5 +27,3 @@ async def test_build():
         "role": "user",
         "content": "What is Python?"
     }
-
-

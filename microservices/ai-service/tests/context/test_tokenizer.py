@@ -22,3 +22,17 @@ def test_tokenizer_count_messages():
     count = tok.count_messages(messages)
     assert count > 0
     assert count >= tok.count("Hello") + tok.count("Hi there!")
+
+
+def test_tokenizer_enforce_budget():
+    tok = Tokenizer()
+    tok.max_tokens = 20  # Artificial low budget
+    messages = [
+        {"role": "system", "content": "system prompt"},
+        {"role": "user", "content": "first message that is very very long and exceeds"},
+        {"role": "assistant", "content": "second message"},
+        {"role": "user", "content": "third message"},
+    ]
+    trimmed = tok.enforce_budget(messages, headroom=5)
+    assert len(trimmed) < 4
+    assert trimmed[0]["role"] == "system"

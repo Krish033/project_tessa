@@ -45,3 +45,12 @@ async def test_summarizer_sync_run(mock_db_session):
 
     assert result == "Sync summary result."
     assert mock_db.add.called
+
+
+@pytest.mark.anyio
+async def test_summarizer_maybe_compact_below_trigger():
+    summarizer = Summarizer(Mock())
+    ctx = [{"role": "user", "content": "hi"}]
+    retained, summary = await summarizer.maybe_compact(ctx, "conv_1", "old summary")
+    assert retained == ctx
+    assert summary == "old summary"

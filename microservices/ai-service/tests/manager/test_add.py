@@ -4,7 +4,7 @@ from app.pipeline.context.manager import ContextManager
 
 def test_add():
     manager = ContextManager()
-    manager._persist_message = Mock()
+    manager.data_pipeline.persist_message = Mock()
 
     manager.add("user", "hello")
 
@@ -12,7 +12,8 @@ def test_add():
     assert manager.ctx[0]["role"] == "user"
     assert manager.ctx[0]["content"] == "hello"
 
-    manager._persist_message.assert_called_once_with(
+    manager.data_pipeline.persist_message.assert_called_once_with(
+        manager.conversation_id,
         manager.ctx[0]["id"],
         "user",
         "hello"

@@ -1,96 +1,35 @@
 import sys
 import json
-import re
 import asyncio
+from typing import Any, List, Dict
 
+# Ensure UTF-8 output encoding on Windows terminals
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-
-def _extract_json_object(text: str):
-    """Extract the first balanced JSON object from text using brace counting.
-    Handles nested objects (e.g. tool arguments) and unescaped newlines."""
-    # Strip any think tags before scanning for JSON
-    cleaned = re.sub(r'<think>[\s\S]*?</think>', '', text, flags=re.IGNORECASE).strip()
-    start = cleaned.find('{')
-    if start == -1:
-        return None
-    depth = 0
-    in_string = False
-    escape_next = False
-    for i in range(start, len(cleaned)):
-        c = cleaned[i]
-        if escape_next:
-            escape_next = False
-            continue
-        if c == '\\' and in_string:
-            escape_next = True
-            continue
-        if c == '"' and not escape_next:
-            in_string = not in_string
-            continue
-        if in_string:
-            continue
-        if c == '{':
-            depth += 1
-        elif c == '}':
-            depth -= 1
-            if depth == 0:
-                try:
-                    return json.loads(cleaned[start:i + 1], strict=False)
-                except json.JSONDecodeError:
-                    return None
-    return None
-
+from app.utils.json_response import JsonResponse
+from app.utils.format_tool import format_tool_activity
 from app.pipeline.tools.meta.policies.safety import SafetyError
-
-from app.ui.cli import (
-    print_reasoning_start,
-    print_reasoning_chunk,
-    print_reasoning_end,
-    print_content_start,
-    print_content_chunk,
-    print_content_end,
-)
 from app.pipeline.memory.ltm import LongTermMemoryManager
 
 _ltm_manager = LongTermMemoryManager()
 
 
-def _format_tool_activity(tool_name: str, arguments: dict) -> str:
-    """Format tool call into a concise, human-readable activity status line."""
-    if tool_name in ("web_search", "search_web", "google_search"):
-        query = arguments.get("query") or arguments.get("q") or ""
-        return f"🔍 Searching the web for '{query}'..." if query else "🔍 Searching the web..."
-    elif tool_name in ("news_search", "search_news"):
-        query = arguments.get("query") or arguments.get("q") or ""
-        return f"📰 Searching news for '{query}'..." if query else "📰 Searching news..."
-    elif tool_name in ("get_os_info", "system_info", "get_system_info"):
-        return "💻 Checking system information..."
-    elif tool_name in ("fetch_url", "read_url", "get_url"):
-        url = arguments.get("url") or ""
-        return f"🌐 Fetching webpage '{url}'..." if url else "🌐 Fetching webpage..."
-    elif tool_name in ("execute_command", "run_command", "bash", "cmd"):
-        cmd = arguments.get("command") or arguments.get("cmd") or ""
-        return f"⚡ Running command: '{cmd}'..." if cmd else "⚡ Executing command..."
-    elif tool_name in ("task_list", "list_tasks"):
-        return "📋 Checking task list..."
-    elif tool_name in ("maps_search", "nearby_places"):
-        query = arguments.get("query") or arguments.get("location") or ""
-        return f"📍 Looking up location '{query}'..." if query else "📍 Looking up locations..."
-    else:
-        return f"⚙️ Running {tool_name}..."
-
-
 class AgentLoop:
     """
-    This class is for running the agent loop.
-    It takes a context and an LLM and runs the agent loop with clean, minimal status logging.
+    Executes the autonomous agent loop.
+
+    Coordinates:
+    - Building context (system prompt, retrieved tools, LTM, conversation history)
+    - Querying the LLM
+    - Parsing responses with JsonResponse
+    - Executing tools via ToolExecutor
+    - Storing extracted Long-Term Memory (LTM) facts
     """
 
-    def __init__(self, ctx, llm, executor, max_iterations=10, verbose=True):   
+    def __init__(self, ctx, llm, executor, max_iterations: int = 10, verbose: bool = True):
         self.ctx = ctx
         self.llm = llm
         self.executor = executor
@@ -98,103 +37,61 @@ class AgentLoop:
         self.verbose = verbose
 
     async def run(self, prompt: str) -> str:
+        """Run the agent loop for a user prompt until final answer or max iterations."""
         self.ctx.add("user", prompt)
 
         for step in range(1, self.max_iterations + 1):
             messages = await self.ctx.build()
+            _, raw_response = await self._call_llm(messages)
 
-            if hasattr(self.llm, "run_stream"):
-                reasoning, raw_response = await self.llm.run_stream(
-                    messages,
-                    on_reasoning=None,
-                    on_content=None,
-                )
-            else:
-                raw_response = self.llm.run(messages)
+            # 1. Parse structured response
+            response = JsonResponse.parse(raw_response)
 
-            # Parse JSON response cleanly
-            clean_str = re.sub(r'<think>[\s\S]*?</think>', '', raw_response, flags=re.IGNORECASE).strip()
-            if clean_str.startswith("```json"):
-                clean_str = clean_str[7:]
-            elif clean_str.startswith("```"):
-                clean_str = clean_str[3:]
-            if clean_str.endswith("```"):
-                clean_str = clean_str[:-3]
-            clean_str = clean_str.strip()
+            # 2. Persist LTM facts in background if present
+            if response.ltm_facts:
+                asyncio.create_task(self._store_ltm(response.ltm_facts))
 
-            try:
-                response = json.loads(clean_str, strict=False)
-            except json.JSONDecodeError:
-                extracted = _extract_json_object(clean_str)
-                if extracted and "action" in extracted:
-                    response = extracted
-                else:
-                    ans_match = re.search(r'"answer"\s*:\s*"([\s\S]*?)"\s*(?:,\s*"ltm"|\}\s*$)', clean_str)
-                    if ans_match:
-                        response = {"action": "final", "answer": ans_match.group(1)}
-                    else:
-                        response = {"action": "final", "answer": clean_str}
+            # 3. Handle Final Answer
+            if response.is_final:
+                self.ctx.add("assistant", response.answer)
+                return response.answer
 
-            action = response.get("action")
-
-            # Handle final response
-            if action == "final":
-                answer = response.get("answer", "")
-                if isinstance(answer, (dict, list)):
-                    answer = json.dumps(answer, indent=2)
-                elif isinstance(answer, str):
-                    if "\\n" in answer:
-                        answer = answer.replace("\\n", "\n")
-                    if "\\t" in answer:
-                        answer = answer.replace("\\t", "\t")
-                    if '\\"' in answer:
-                        answer = answer.replace('\\"', '"')
-                    answer = answer.strip()
-                    if answer.startswith('"') and answer.endswith('"') and len(answer) > 1:
-                        answer = answer[1:-1]
-
-                ltm = response.get("ltm", [])
-                if isinstance(ltm, list) and ltm:
-                    asyncio.create_task(self._store_ltm(ltm))
-
-                self.ctx.add("assistant", answer)
-                return answer
-
-            # Handle tool execution
-            tool_name = None
-            arguments = {}
-
-            if action == "tool":
-                tool_name = response.get("tool")
-                arguments = response.get("arguments", {})
-            elif action and hasattr(self.executor, "registry") and self.executor.registry.exists(action):
-                tool_name = action
-                arguments = response.get("arguments") or {k: v for k, v in response.items() if k != "action"}
-
-            if tool_name:
+            # 4. Handle Tool Execution
+            if response.is_tool and response.tool_name:
                 if self.verbose:
-                    print(_format_tool_activity(tool_name, arguments))
+                    print(format_tool_activity(response.tool_name, response.arguments))
 
-                assistant_msg = json.dumps({"action": "tool", "tool": tool_name, "arguments": arguments})
-                self.ctx.add("assistant", assistant_msg)
-
-                try:
-                    execution = await self.executor.execute(tool_name, arguments)
-                    tool_output = execution.get("result", str(execution))
-                except PermissionError as e:
-                    tool_output = f"⛔ Permission denied: {e}"
-                except SafetyError as e:
-                    tool_output = f"🛑 Safety policy blocked: {e}"
-                except Exception as e:
-                    tool_output = f"Error executing tool '{tool_name}': {str(e)}"
-
-                context_msg = f"Tool '{tool_name}' execution result:\n{tool_output}"
-                self.ctx.add("output", context_msg)
+                self.ctx.add("assistant", response.format_tool_call())
+                tool_output = await self._execute_tool(response.tool_name, response.arguments)
+                self.ctx.add("output", f"Tool '{response.tool_name}' execution result:\n{tool_output}")
                 continue
 
-            raise ValueError(f"Unknown LLM response action: {action} in response: {response}")
+            raise ValueError(f"Unknown LLM response action: {response.action} in response: {response.data}")
 
         return "Agent exceeded maximum iterations"
+
+    async def _call_llm(self, messages: list) -> tuple[str, str]:
+        """Execute LLM inference supporting both streaming and standard interfaces."""
+        if hasattr(self.llm, "run_stream"):
+            return await self.llm.run_stream(messages, on_reasoning=None, on_content=None)
+        raw_response = self.llm.run(messages)
+        return "", raw_response
+
+    async def _execute_tool(self, tool_name: str, arguments: dict) -> str:
+        """Execute a tool via executor and format results or errors safely."""
+        try:
+            execution = await self.executor.execute(tool_name, arguments)
+            result = execution.get("result", str(execution))
+        except PermissionError as e:
+            result = f"⛔ Permission denied: {e}"
+        except SafetyError as e:
+            result = f"🛑 Safety policy blocked: {e}"
+        except Exception as e:
+            result = f"Error executing tool '{tool_name}': {str(e)}"
+
+        if isinstance(result, (dict, list)):
+            return json.dumps(result, indent=2, ensure_ascii=False)
+        return str(result)
 
     async def _store_ltm(self, facts: list) -> None:
         """Persist LTM facts to DB with embeddings (fire-and-forget)."""
@@ -202,13 +99,13 @@ class AgentLoop:
         for fact in facts:
             if fact and isinstance(fact, str) and fact.strip():
                 try:
-                    await asyncio.to_thread(
-                        _ltm_manager.store_memory,
+                    await _ltm_manager.store_memory(
                         owner_id,
                         fact.strip(),
                     )
                 except Exception as e:
-                    self._log(f"⚠️ [Agent] LTM store failed: {e}")
+                    if self.verbose:
+                        print(f"⚠️ [Agent] LTM store failed: {e}")
 
     async def run_event_stream(self, prompt: str):
         """
@@ -228,7 +125,6 @@ class AgentLoop:
                 queue.put_nowait({"type": "reasoning", "chunk": chunk})
 
             def handle_content(chunk: str):
-                # Queue content chunks internally per step
                 queue.put_nowait({"type": "content_chunk", "chunk": chunk})
 
             if hasattr(self.llm, "run_stream"):
@@ -266,104 +162,51 @@ class AgentLoop:
                 raw_response = self.llm.run(messages)
                 reasoning = ""
 
-            # Emit raw response event
             yield {"type": "raw_response", "step": step, "raw": raw_response}
 
-            # Parse JSON response
-            clean_str = re.sub(r'<think>[\s\S]*?</think>', '', raw_response, flags=re.IGNORECASE).strip()
-            if clean_str.startswith("```json"):
-                clean_str = clean_str[7:]
-            elif clean_str.startswith("```"):
-                clean_str = clean_str[3:]
-            if clean_str.endswith("```"):
-                clean_str = clean_str[:-3]
-            clean_str = clean_str.strip()
+            # Parse structured response
+            response = JsonResponse.parse(raw_response)
 
-            try:
-                response = json.loads(clean_str, strict=False)
-            except json.JSONDecodeError:
-                extracted = _extract_json_object(clean_str)
-                if extracted and "action" in extracted:
-                    response = extracted
-                else:
-                    # Regex fallback if answer string has unescaped quotes/syntax issues
-                    ans_match = re.search(r'"answer"\s*:\s*"([\s\S]*?)"\s*(?:,\s*"ltm"|\}\s*$)', clean_str)
-                    if ans_match:
-                        response = {"action": "final", "answer": ans_match.group(1)}
-                    else:
-                        response = {"action": "final", "answer": clean_str}
+            if response.ltm_facts:
+                asyncio.create_task(self._store_ltm(response.ltm_facts))
 
-            action = response.get("action")
-
-            if action == "final":
-                answer = response.get("answer", "")
-                if isinstance(answer, (dict, list)):
-                    answer = json.dumps(answer, indent=2)
-                elif isinstance(answer, str):
-                    if "\\n" in answer:
-                        answer = answer.replace("\\n", "\n")
-                    if "\\t" in answer:
-                        answer = answer.replace("\\t", "\t")
-                    if '\\"' in answer:
-                        answer = answer.replace('\\"', '"')
-                    answer = answer.strip()
-                    if answer.startswith('"') and answer.endswith('"') and len(answer) > 1:
-                        answer = answer[1:-1]
-
-                self.ctx.add("assistant", answer)
-                ltm = response.get("ltm", [])
-                if not isinstance(ltm, list):
-                    ltm = []
-                if ltm:
-                    asyncio.create_task(self._store_ltm(ltm))
-
-                # Yield clean final answer stream to the UI
-                yield {"type": "content", "chunk": answer}
-                yield {"type": "final", "answer": answer, "ltm": ltm, "raw": raw_response}
+            # 1. Handle Final Answer
+            if response.is_final:
+                self.ctx.add("assistant", response.answer)
+                yield {"type": "content", "chunk": response.answer}
+                yield {"type": "final", "answer": response.answer, "ltm": response.ltm_facts, "raw": raw_response}
                 return
 
-            tool_name = None
-            arguments = {}
+            # 2. Handle Tool Execution
+            if response.is_tool and response.tool_name:
+                self.ctx.add("assistant", response.format_tool_call())
+                yield {"type": "tool_start", "tool": response.tool_name, "arguments": response.arguments}
 
-            if action == "tool":
-                tool_name = response.get("tool")
-                arguments = response.get("arguments", {})
-            elif action and hasattr(self.executor, "registry") and self.executor.registry.exists(action):
-                tool_name = action
-                arguments = response.get("arguments") or {k: v for k, v in response.items() if k != "action"}
-
-            if tool_name:
-                # Record assistant tool call in context history
-                assistant_msg = json.dumps({"action": "tool", "tool": tool_name, "arguments": arguments})
-                self.ctx.add("assistant", assistant_msg)
-
-                yield {"type": "tool_start", "tool": tool_name, "arguments": arguments}
-
+                status = "success"
                 try:
-                    execution = await self.executor.execute(tool_name, arguments)
+                    execution = await self.executor.execute(response.tool_name, response.arguments)
                     tool_output = execution.get("result", str(execution))
-                    yield {"type": "tool_result", "tool": tool_name, "result": tool_output, "status": "success"}
                 except PermissionError as e:
                     tool_output = f"⛔ Permission denied: {e}"
-                    yield {"type": "tool_result", "tool": tool_name, "result": tool_output, "status": "denied"}
+                    status = "denied"
                 except SafetyError as e:
                     tool_output = f"🛑 Safety policy blocked: {e}"
-                    yield {"type": "tool_result", "tool": tool_name, "result": tool_output, "status": "denied"}
+                    status = "denied"
                 except Exception as e:
-                    tool_output = f"Error executing tool '{tool_name}': {str(e)}"
-                    yield {"type": "tool_result", "tool": tool_name, "result": tool_output, "status": "error"}
+                    tool_output = f"Error executing tool '{response.tool_name}': {str(e)}"
+                    status = "error"
 
-                context_msg = f"Tool '{tool_name}' execution result:\n{tool_output}"
-                self.ctx.add("output", context_msg)
+                yield {"type": "tool_result", "tool": response.tool_name, "result": tool_output, "status": status}
+
+                if isinstance(tool_output, (dict, list)):
+                    formatted = json.dumps(tool_output, indent=2, ensure_ascii=False)
+                else:
+                    formatted = str(tool_output)
+
+                self.ctx.add("output", f"Tool '{response.tool_name}' execution result:\n{formatted}")
                 continue
 
-            yield {"type": "error", "message": f"Unknown action: {action}"}
+            yield {"type": "error", "message": f"Unknown action: {response.action}"}
             return
 
         yield {"type": "error", "message": "Agent exceeded maximum iterations"}
-
-
-
-
-
-    

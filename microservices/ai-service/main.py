@@ -30,15 +30,14 @@ async def main():
         ctx=context_manager,
         llm=llm,
         executor=executor,
-        max_iterations=10,
+        max_iterations=20,
         verbose=True,
     )
 
     # 4. Static prompt for execution
-    prompt = "Give me a brief summary of the available tools and verify system info."
+    prompt = "Find all Python files modified recently and tell me which ones are largest"
 
     response = await agent.run(prompt)
-
     print(response)
 
 if __name__ == "__main__":

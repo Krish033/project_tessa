@@ -80,3 +80,27 @@ async def test_web_search(mock_post):
     assert len(res) == 1
     assert res[0]["title"] == "Python Programming"
     assert res[0]["url"] == "https://python.org"
+
+
+def test_list_files(tmp_path):
+    from app.pipeline.tools.meta.definitions.list_files import list_files
+
+    # Create dummy files
+    (tmp_path / "a.py").write_text("print('a')")
+    (tmp_path / "b.txt").write_text("text content")
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "c.py").write_text("x = 1\ny = 2\nz = 3\n")
+
+    # List all
+    all_files = list_files(str(tmp_path), recursive=True)
+    assert len(all_files) == 3
+
+    # Pattern filter
+    py_files = list_files(str(tmp_path), pattern="*.py", recursive=True)
+    assert len(py_files) == 2
+    assert all(f["file_name"].endswith(".py") for f in py_files)
+
+    # Sort by size
+    size_sorted = list_files(str(tmp_path), pattern="*.py", sort_by="size")
+    assert size_sorted[0]["size_bytes"] >= size_sorted[1]["size_bytes"]

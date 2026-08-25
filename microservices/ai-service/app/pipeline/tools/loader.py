@@ -1,4 +1,5 @@
 import uuid
+import asyncio
 from app.core.database import db_session
 from app.models.models import ToolModel
 from app.pipeline.memory.embedder import Embedder
@@ -25,6 +26,7 @@ from app.pipeline.tools.meta.definitions.rss_reader import rss_reader
 from app.pipeline.tools.meta.definitions.read_file import read_file
 from app.pipeline.tools.meta.definitions.write_file import write_file
 from app.pipeline.tools.meta.definitions.edit_file import edit_file
+from app.pipeline.tools.meta.definitions.list_files import list_files
 from app.pipeline.tools.meta.definitions.search_files import search_files, search_code
 from app.pipeline.tools.meta.definitions.git_tool import git
 from app.pipeline.tools.meta.definitions.github_tool import github
@@ -73,12 +75,22 @@ _CRITICAL = Safety(risk=Risk.CRITICAL, permission=PermissionLevel.DANGEROUS, req
 def sync_tools_to_db(registry: ToolRegistry) -> None:
     embedder = Embedder()
 
+    async def _safe_get_embed(text: str):
+        res = embedder.embed(text)
+        return await res if asyncio.iscoroutine(res) else res
+
     with db_session() as db:
         for tool in registry.get_all():
             embedding_vector = None
             try:
                 text_to_embed = f"Tool: {tool.name}\nDescription: {tool.description}"
-                embedding_vector = embedder.embed(text_to_embed)
+                try:
+                    loop = asyncio.get_running_loop()
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                        embedding_vector = pool.submit(asyncio.run, _safe_get_embed(text_to_embed)).result()
+                except RuntimeError:
+                    embedding_vector = asyncio.run(_safe_get_embed(text_to_embed))
             except Exception as e:
                 print(f"Could not generate embedding for tool '{tool.name}': {e}")
 
@@ -166,6 +178,10 @@ def load_tools(registry: ToolRegistry, sync_db: bool = True) -> None:
     # ---------------------------------------------------------------
     reg("read_file", "Read contents of a text file with optional line range slicing.", read_file,
         {"type": "object", "properties": {"path": {"type": "string"}, "start_line": {"type": "integer"}, "end_line": {"type": "integer"}}, "required": ["path"]},
+        safety=_READ)
+
+    reg("list_files", "List, inspect, and filter files and folders in a directory with file sizes and modification dates.", list_files,
+        {"type": "object", "properties": {"directory_path": {"type": "string"}, "pattern": {"type": "string"}, "recursive": {"type": "boolean"}, "sort_by": {"type": "string"}, "max_results": {"type": "integer"}}, "required": []},
         safety=_READ)
 
     reg("write_file", "Write or overwrite text content to a file at path.", write_file,
