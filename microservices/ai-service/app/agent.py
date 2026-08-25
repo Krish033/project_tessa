@@ -1,19 +1,27 @@
+import sys
 import json
 import re
 import asyncio
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 
 def _extract_json_object(text: str):
     """Extract the first balanced JSON object from text using brace counting.
-    Handles nested objects (e.g. tool arguments) correctly, unlike regex."""
-    start = text.find('{')
+    Handles nested objects (e.g. tool arguments) and unescaped newlines."""
+    # Strip any think tags before scanning for JSON
+    cleaned = re.sub(r'<think>[\s\S]*?</think>', '', text, flags=re.IGNORECASE).strip()
+    start = cleaned.find('{')
     if start == -1:
         return None
     depth = 0
     in_string = False
     escape_next = False
-    for i in range(start, len(text)):
-        c = text[i]
+    for i in range(start, len(cleaned)):
+        c = cleaned[i]
         if escape_next:
             escape_next = False
             continue
@@ -31,10 +39,12 @@ def _extract_json_object(text: str):
             depth -= 1
             if depth == 0:
                 try:
-                    return json.loads(text[start:i + 1])
+                    return json.loads(cleaned[start:i + 1], strict=False)
                 except json.JSONDecodeError:
                     return None
     return None
+
+from app.pipeline.tools.meta.policies.safety import SafetyError
 
 from app.ui.cli import (
     print_reasoning_start,
@@ -49,11 +59,35 @@ from app.pipeline.memory.ltm import LongTermMemoryManager
 _ltm_manager = LongTermMemoryManager()
 
 
+def _format_tool_activity(tool_name: str, arguments: dict) -> str:
+    """Format tool call into a concise, human-readable activity status line."""
+    if tool_name in ("web_search", "search_web", "google_search"):
+        query = arguments.get("query") or arguments.get("q") or ""
+        return f"🔍 Searching the web for '{query}'..." if query else "🔍 Searching the web..."
+    elif tool_name in ("news_search", "search_news"):
+        query = arguments.get("query") or arguments.get("q") or ""
+        return f"📰 Searching news for '{query}'..." if query else "📰 Searching news..."
+    elif tool_name in ("get_os_info", "system_info", "get_system_info"):
+        return "💻 Checking system information..."
+    elif tool_name in ("fetch_url", "read_url", "get_url"):
+        url = arguments.get("url") or ""
+        return f"🌐 Fetching webpage '{url}'..." if url else "🌐 Fetching webpage..."
+    elif tool_name in ("execute_command", "run_command", "bash", "cmd"):
+        cmd = arguments.get("command") or arguments.get("cmd") or ""
+        return f"⚡ Running command: '{cmd}'..." if cmd else "⚡ Executing command..."
+    elif tool_name in ("task_list", "list_tasks"):
+        return "📋 Checking task list..."
+    elif tool_name in ("maps_search", "nearby_places"):
+        query = arguments.get("query") or arguments.get("location") or ""
+        return f"📍 Looking up location '{query}'..." if query else "📍 Looking up locations..."
+    else:
+        return f"⚙️ Running {tool_name}..."
+
+
 class AgentLoop:
     """
     This class is for running the agent loop.
-    It takes a context and an LLM and runs the agent loop.
-    It supports tool calls, verbose logging, live reasoning & content streaming, and final responses.
+    It takes a context and an LLM and runs the agent loop with clean, minimal status logging.
     """
 
     def __init__(self, ctx, llm, executor, max_iterations=10, verbose=True):   
@@ -63,66 +97,23 @@ class AgentLoop:
         self.max_iterations = max_iterations
         self.verbose = verbose
 
-    def _log(self, msg: str):
-        if self.verbose:
-            print(msg)
-
-    async def run(self, prompt: str):
-        self._log(f"\n🚀 [Agent] Starting execution for prompt: '{prompt}'")
+    async def run(self, prompt: str) -> str:
         self.ctx.add("user", prompt)
 
         for step in range(1, self.max_iterations + 1):
-            self._log(f"\n--- 🔄 Step {step}/{self.max_iterations} ---")
-            
-            # 1. Build messages context
             messages = await self.ctx.build()
-            self._log(f"[Agent] Context built ({len(messages)} messages sent to LLM)")
-
-            # 2. Run LLM with Streaming
-            self._log("[Agent] Streaming LLM response...")
-
-            reasoning_started = False
-            content_started = False
-
-            def handle_reasoning(chunk: str):
-                nonlocal reasoning_started
-                if not reasoning_started:
-                    if self.verbose:
-                        print_reasoning_start()
-                    reasoning_started = True
-                if self.verbose:
-                    print_reasoning_chunk(chunk)
-
-            def handle_content(chunk: str):
-                nonlocal reasoning_started, content_started
-                if reasoning_started and not content_started:
-                    if self.verbose:
-                        print_reasoning_end()
-                if not content_started:
-                    if self.verbose:
-                        print_content_start()
-                    content_started = True
-                if self.verbose:
-                    print_content_chunk(chunk)
 
             if hasattr(self.llm, "run_stream"):
                 reasoning, raw_response = await self.llm.run_stream(
                     messages,
-                    on_reasoning=handle_reasoning,
-                    on_content=handle_content,
+                    on_reasoning=None,
+                    on_content=None,
                 )
             else:
                 raw_response = self.llm.run(messages)
-                reasoning = ""
 
-            if self.verbose:
-                if reasoning_started and not content_started:
-                    print_reasoning_end()
-                elif content_started:
-                    print_content_end()
-
-            # 3. Parse JSON response cleanly
-            clean_str = raw_response.strip()
+            # Parse JSON response cleanly
+            clean_str = re.sub(r'<think>[\s\S]*?</think>', '', raw_response, flags=re.IGNORECASE).strip()
             if clean_str.startswith("```json"):
                 clean_str = clean_str[7:]
             elif clean_str.startswith("```"):
@@ -132,19 +123,21 @@ class AgentLoop:
             clean_str = clean_str.strip()
 
             try:
-                response = json.loads(clean_str)
+                response = json.loads(clean_str, strict=False)
             except json.JSONDecodeError:
-                # Balanced-brace extraction handles nested argument objects
-                extracted = _extract_json_object(raw_response)
+                extracted = _extract_json_object(clean_str)
                 if extracted and "action" in extracted:
                     response = extracted
                 else:
-                    self._log("[Agent] Warning: LLM output was not valid JSON. Wrapping as final response.")
-                    response = {"action": "final", "answer": raw_response}
+                    ans_match = re.search(r'"answer"\s*:\s*"([\s\S]*?)"\s*(?:,\s*"ltm"|\}\s*$)', clean_str)
+                    if ans_match:
+                        response = {"action": "final", "answer": ans_match.group(1)}
+                    else:
+                        response = {"action": "final", "answer": clean_str}
 
             action = response.get("action")
 
-            # 4. Handle final response
+            # Handle final response
             if action == "final":
                 answer = response.get("answer", "")
                 if isinstance(answer, (dict, list)):
@@ -159,16 +152,15 @@ class AgentLoop:
                     answer = answer.strip()
                     if answer.startswith('"') and answer.endswith('"') and len(answer) > 1:
                         answer = answer[1:-1]
+
                 ltm = response.get("ltm", [])
                 if isinstance(ltm, list) and ltm:
-                    self._log(f"📌 [Agent] LTM facts: {ltm}")
                     asyncio.create_task(self._store_ltm(ltm))
-                self._log(f"✅ [Agent] Task Complete! Final Answer:\n{answer}\n")
+
                 self.ctx.add("assistant", answer)
                 return answer
 
-            
-            # 5. Handle tool execution (support "action": "tool" or "action": "<tool_name>")
+            # Handle tool execution
             tool_name = None
             arguments = {}
 
@@ -180,27 +172,29 @@ class AgentLoop:
                 arguments = response.get("arguments") or {k: v for k, v in response.items() if k != "action"}
 
             if tool_name:
-                self._log(f"🛠️ [Agent] Executing tool: '{tool_name}' with arguments: {json.dumps(arguments)}")
+                if self.verbose:
+                    print(_format_tool_activity(tool_name, arguments))
 
-                # Preserve assistant tool call in context history
                 assistant_msg = json.dumps({"action": "tool", "tool": tool_name, "arguments": arguments})
                 self.ctx.add("assistant", assistant_msg)
 
                 try:
                     execution = await self.executor.execute(tool_name, arguments)
                     tool_output = execution.get("result", str(execution))
-                    self._log(f"📥 [Agent] Tool Result:\n{tool_output}\n")
+                except PermissionError as e:
+                    tool_output = f"⛔ Permission denied: {e}"
+                except SafetyError as e:
+                    tool_output = f"🛑 Safety policy blocked: {e}"
                 except Exception as e:
                     tool_output = f"Error executing tool '{tool_name}': {str(e)}"
-                    self._log(f"❌ [Agent] Tool Execution Error: {tool_output}\n")
 
-                # Add clean tool output string into context history
                 context_msg = f"Tool '{tool_name}' execution result:\n{tool_output}"
                 self.ctx.add("output", context_msg)
                 continue
 
-            self._log(f"⚠️ [Agent] Unknown action: '{action}'")
             raise ValueError(f"Unknown LLM response action: {action} in response: {response}")
+
+        return "Agent exceeded maximum iterations"
 
     async def _store_ltm(self, facts: list) -> None:
         """Persist LTM facts to DB with embeddings (fire-and-forget)."""
@@ -251,6 +245,8 @@ class AgentLoop:
                         event = queue.get_nowait()
                         if event["type"] == "reasoning":
                             yield event
+                        elif event["type"] == "content_chunk":
+                            yield {"type": "content", "chunk": event["chunk"]}
                     except asyncio.QueueEmpty:
                         await asyncio.sleep(0.005)
 
@@ -258,6 +254,8 @@ class AgentLoop:
                     event = queue.get_nowait()
                     if event["type"] == "reasoning":
                         yield event
+                    elif event["type"] == "content_chunk":
+                        yield {"type": "content", "chunk": event["chunk"]}
 
                 try:
                     reasoning, raw_response = await llm_task
@@ -272,7 +270,7 @@ class AgentLoop:
             yield {"type": "raw_response", "step": step, "raw": raw_response}
 
             # Parse JSON response
-            clean_str = raw_response.strip()
+            clean_str = re.sub(r'<think>[\s\S]*?</think>', '', raw_response, flags=re.IGNORECASE).strip()
             if clean_str.startswith("```json"):
                 clean_str = clean_str[7:]
             elif clean_str.startswith("```"):
@@ -282,13 +280,18 @@ class AgentLoop:
             clean_str = clean_str.strip()
 
             try:
-                response = json.loads(clean_str)
+                response = json.loads(clean_str, strict=False)
             except json.JSONDecodeError:
-                extracted = _extract_json_object(raw_response)
+                extracted = _extract_json_object(clean_str)
                 if extracted and "action" in extracted:
                     response = extracted
                 else:
-                    response = {"action": "final", "answer": raw_response}
+                    # Regex fallback if answer string has unescaped quotes/syntax issues
+                    ans_match = re.search(r'"answer"\s*:\s*"([\s\S]*?)"\s*(?:,\s*"ltm"|\}\s*$)', clean_str)
+                    if ans_match:
+                        response = {"action": "final", "answer": ans_match.group(1)}
+                    else:
+                        response = {"action": "final", "answer": clean_str}
 
             action = response.get("action")
 
@@ -340,6 +343,12 @@ class AgentLoop:
                     execution = await self.executor.execute(tool_name, arguments)
                     tool_output = execution.get("result", str(execution))
                     yield {"type": "tool_result", "tool": tool_name, "result": tool_output, "status": "success"}
+                except PermissionError as e:
+                    tool_output = f"⛔ Permission denied: {e}"
+                    yield {"type": "tool_result", "tool": tool_name, "result": tool_output, "status": "denied"}
+                except SafetyError as e:
+                    tool_output = f"🛑 Safety policy blocked: {e}"
+                    yield {"type": "tool_result", "tool": tool_name, "result": tool_output, "status": "denied"}
                 except Exception as e:
                     tool_output = f"Error executing tool '{tool_name}': {str(e)}"
                     yield {"type": "tool_result", "tool": tool_name, "result": tool_output, "status": "error"}

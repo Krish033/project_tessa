@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Any, List, Optional
 
+from app.pipeline.tools.meta.policies.safety import Safety
+
 
 @dataclass
 class Tool:
@@ -8,7 +10,8 @@ class Tool:
     description: str
     function: Callable
     parameters: dict
-    permissions: dict = field(default_factory=dict)
+    permissions: dict = field(default_factory=dict)   # legacy — kept for DB sync
+    safety: Safety = field(default_factory=Safety)     # runtime permission + policy
 
 
 # tool registry
@@ -23,7 +26,7 @@ class ToolRegistry:
             raise ValueError(
                 f"Tool already registered: {tool.name}"
             )
-
+ 
         self._tools[tool.name] = tool
 
 

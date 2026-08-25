@@ -34,6 +34,9 @@ def get_database_url() -> str:
     db_name = os.getenv("POSTGRES_DB", "ai_service_db")
     return f"postgresql://{user}:{password}@{host}:{port}/{db_name}"
 
+import warnings
+warnings.filterwarnings("ignore")
+
 DATABASE_URL = get_database_url()
 
 # SQLAlchemy Engine
@@ -42,7 +45,15 @@ engine = create_engine(
     pool_pre_ping=True,
     pool_size=10,
     max_overflow=20,
+    connect_args={"options": "-c client_min_messages=error"},
 )
+
+from sqlalchemy import event
+
+@event.listens_for(engine, "connect")
+def receive_connect(dbapi_connection, connection_record):
+    if hasattr(dbapi_connection, "notices"):
+        dbapi_connection.notices.clear()
 
 # Session Factory
 SessionLocal = sessionmaker(

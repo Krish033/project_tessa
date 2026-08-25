@@ -24,8 +24,7 @@ TOKEN_HEADROOM = 10_000
 
 
 class ContextManager:
-    """
-    Manages in-memory short-term context with:
+    """ Manages in-memory short-term context with:
       - DB persistence (messages + summaries)
       - Token budget enforcement (10k below model max)
       - Auto-compaction: every 10 messages, summarize the oldest 7
@@ -48,17 +47,16 @@ class ContextManager:
         # Summary text prepended to system prompt (from latest DB summary)
         self.loaded_summary: str = ""
 
-    # ------------------------------------------------------------------
-    # Public: load a conversation from DB
-    # ------------------------------------------------------------------
+ 
 
     async def load(self) -> None:
-        """
-        Load conversation from DB:
+
+        """ Load conversation from DB:
           1. Get the latest ContextSummary row (if any).
           2. Load only messages *after* last_message_id.
           3. Store summary text to prepend to system prompt.
         """
+
         self.ctx = []
         self.loaded_summary = ""
 
@@ -70,6 +68,10 @@ class ContextManager:
         messages = await asyncio.to_thread(self._fetch_messages_after, after_id)
         self.ctx = messages
 
+
+
+
+    # Fetch latest summary from DB
     def _fetch_latest_summary(self):
         """Return (summary_text, last_message_id) from the most recent summary row."""
         with db_session() as db:
@@ -83,6 +85,9 @@ class ContextManager:
                 return row.summary, str(row.last_message_id) if row.last_message_id else None
             return None, None
 
+
+
+    # Fetch messages after the given message id
     def _fetch_messages_after(self, after_message_id: Optional[str]) -> List[dict]:
         """Return messages after the given message id (or all if None)."""
         with db_session() as db:
@@ -113,23 +118,36 @@ class ContextManager:
                 for m in rows
             ]
 
-    # ------------------------------------------------------------------
-    # Public: add a message
-    # ------------------------------------------------------------------
-
+    
+    # Add messages to the context manager
     def add(self, role: str, content: str) -> None:
         """Add a message to in-memory ctx and persist it to DB."""
         msg_id = str(uuid.uuid4())
         self.ctx.append({"id": msg_id, "role": role, "content": content})
         self._persist_message(msg_id, role, content)
 
+
+
+    # Persist messages in DB
     def _persist_message(self, msg_id: str, role: str, content: str) -> None:
+        """ Persist messages in DB """
+
         token_count = tokenizer.count(content)
         try:
+            try:
+                conv_uuid = uuid.UUID(str(self.conversation_id))
+            except ValueError:
+                conv_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, str(self.conversation_id))
+
+            try:
+                m_uuid = uuid.UUID(str(msg_id))
+            except ValueError:
+                m_uuid = uuid.uuid4()
+
             with db_session() as db:
                 db.add(Message(
-                    id=uuid.UUID(msg_id),
-                    conversation_id=uuid.UUID(self.conversation_id),
+                    id=m_uuid,
+                    conversation_id=conv_uuid,
                     role=role,
                     content=content,
                     token_count=token_count,
@@ -137,16 +155,19 @@ class ContextManager:
         except Exception:
             pass  # Non-fatal: in-memory ctx is the source of truth during a session
 
-    # ------------------------------------------------------------------
-    # Public: build ChatML messages for LLM
-    # ------------------------------------------------------------------
 
+    # Get the last user prompt
     def get_latest_user_prompt(self) -> str:
+        """ Get the last user prompt """
+
         for msg in reversed(self.ctx):
             if msg.get("role") == "user" and msg.get("content"):
                 return msg["content"]
         return ""
 
+
+
+    # TODO: Write pytest for this
     async def build(self) -> List[Dict[str, str]]:
         """
         Build the ChatML message list to send to the LLM:

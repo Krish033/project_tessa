@@ -52,7 +52,9 @@ class ReasoningStreamParser:
                             self.buffer = self.buffer[-i:]
                             partial_match = True
                             break
-                    if not partial_match:
+                    if partial_match:
+                        break
+                    else:
                         self.full_content += self.buffer
                         if self.on_content:
                             self.on_content(self.buffer)
@@ -80,7 +82,9 @@ class ReasoningStreamParser:
                             self.buffer = self.buffer[-i:]
                             partial_match = True
                             break
-                    if not partial_match:
+                    if partial_match:
+                        break
+                    else:
                         self.full_reasoning += self.buffer
                         if self.on_reasoning:
                             self.on_reasoning(self.buffer)
@@ -103,14 +107,14 @@ class QwenLLM:
     
     def __init__(self, model_name: str = None):
         host = os.getenv("OLLAMA_URL", "http://localhost:11434")
-        self.model_name = model_name or os.getenv("OLLAMA_MODEL", "qwen3:4b")
+        self.model_name = model_name or os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
         self.client = ollama.Client(host=host)
         self.async_client = ollama.AsyncClient(host=host)
         
     def get_options(self):
-        num_ctx = int(os.getenv("OLLAMA_NUM_CTX", "2048"))
+        num_ctx = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
         num_thread = int(os.getenv("OLLAMA_NUM_THREAD", "0"))  # 0 = auto
-        num_predict = int(os.getenv("OLLAMA_NUM_PREDICT", "512"))
+        num_predict = int(os.getenv("OLLAMA_NUM_PREDICT", "4096"))
         return {
             "temperature": 0.0,
             "num_ctx": num_ctx,
@@ -127,6 +131,7 @@ class QwenLLM:
             model=self.model_name,
             messages=messages,
             options=options,
+            think=False,
             keep_alive=-1,
             stream=True,
         )
@@ -147,6 +152,7 @@ class QwenLLM:
             model=self.model_name,
             messages=messages,
             options=options,
+            think=False,
             keep_alive=-1,
         )
         content = response["message"]["content"].strip()

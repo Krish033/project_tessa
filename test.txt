@@ -1,0 +1,18 @@
+hello
+hello123
+12345
+abc@example.com
++91 9876543210
+ERROR: database failed
+INFO: server started
+user_123
+Price: $499?
+[123]
+exmple person
+123
+456
+789 2
+789 2e
+
+thisIsACamelCaseWord = 123
+This is an other line
