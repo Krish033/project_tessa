@@ -1,18 +1,23 @@
-
+name: Run Tests on Project
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "microservices/ai-service/**"
 
-    push:
-        branches: [main]
-
-    pull_request:
-        branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - "microservices/ai-service/**"
     
-
-
 jobs:
     test:
         runs-on: ubuntu-latest
+
+        defaults:
+            run:
+                working-directory: microservices/ai-service
 
         steps:
             - name: Checkout
