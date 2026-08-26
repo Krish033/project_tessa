@@ -1,9 +1,9 @@
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-from app.pipeline.context.data_pipeline import DataPipeline
+from unittest.mock import patch, MagicMock
+from app.models.data_pipeline import DataPipeline
 
 
-@patch("app.pipeline.context.data_pipeline.db_session")
+@patch("app.models.data_pipeline.db_session")
 def test_data_pipeline_persist_message(mock_db_session):
     mock_db = MagicMock()
     mock_db_session.return_value.__enter__.return_value = mock_db
@@ -13,7 +13,7 @@ def test_data_pipeline_persist_message(mock_db_session):
     assert mock_db.add.called
 
 
-@patch("app.pipeline.context.data_pipeline.db_session")
+@patch("app.models.data_pipeline.db_session")
 def test_data_pipeline_fetch_latest_summary_empty(mock_db_session):
     mock_db = MagicMock()
     mock_db.query.return_value.filter_by.return_value.order_by.return_value.first.return_value = None
@@ -26,7 +26,7 @@ def test_data_pipeline_fetch_latest_summary_empty(mock_db_session):
 
 
 @pytest.mark.anyio
-@patch("app.pipeline.context.data_pipeline.db_session")
+@patch("app.models.data_pipeline.db_session")
 async def test_data_pipeline_load(mock_db_session):
     mock_db = MagicMock()
     mock_db.query.return_value.filter_by.return_value.order_by.return_value.first.return_value = None
