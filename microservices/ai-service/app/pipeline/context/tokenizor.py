@@ -1,6 +1,7 @@
-import os
 import logging
 from typing import List, Optional, Any
+
+from app.core.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ class Tokenizer:
 
     def __init__(self, model_id: str = "Qwen/Qwen2.5-1.5B"):
         self.model_id = model_id
-        self.max_tokens = int(os.getenv("MAX_MODEL_TOKENS", "32768"))
+        self.max_tokens = config.MAX_MODEL_TOKENS
         if not Tokenizer._init_attempted:
             Tokenizer._init_attempted = True
             self._load_tokenizer()

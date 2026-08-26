@@ -3,7 +3,7 @@ import json
 from typing import Dict, Any, List, Optional
 from sqlalchemy import text
 from app.core.database import db_session
-from app.pipeline.memory.embedder import Embedder
+from app.pipeline.context.memory.embedder import Embedder
 from app.pipeline.tools.meta.retriever import ToolRetriever
 
 

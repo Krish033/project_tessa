@@ -3,7 +3,7 @@ from typing import List, Optional
 from sqlalchemy import select
 from app.core.database import db_session
 from app.models.models import ToolModel
-from app.pipeline.memory.embedder import Embedder
+from app.pipeline.context.memory.embedder import Embedder
 
 
 class ToolRetriever:

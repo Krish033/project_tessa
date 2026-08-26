@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
-from app.pipeline.memory.ltm import LongTermMemoryManager
+from app.pipeline.context.memory.ltm import LongTermMemoryManager
 
 
 @pytest.mark.anyio
@@ -12,16 +12,15 @@ async def test_store_memory_invalid_input():
 
 
 @pytest.mark.anyio
-@patch("app.pipeline.memory.ltm.db_session")
-async def test_store_memory_new_with_generated_key(mock_db_session):
+@patch("app.pipeline.context.memory.ltm.db_session")
+async def test_create_memory(mock_db_session):
     mock_db = MagicMock()
-    mock_db.query.return_value.filter_by.return_value.first.return_value = None
     mock_db_session.return_value.__enter__.return_value = mock_db
 
     ltm = LongTermMemoryManager()
     ltm.embedder.embed = AsyncMock(return_value=[0.1] * 768)
 
-    mem = await ltm.store_memory(
+    mem = await ltm.create_memory(
         owner_id="user_123",
         content="My favorite editor is Neovim",
     )
@@ -34,8 +33,8 @@ async def test_store_memory_new_with_generated_key(mock_db_session):
 
 
 @pytest.mark.anyio
-@patch("app.pipeline.memory.ltm.db_session")
-async def test_store_memory_update_existing(mock_db_session):
+@patch("app.pipeline.context.memory.ltm.db_session")
+async def test_update_memory(mock_db_session):
     mock_existing = MagicMock()
     mock_existing.content = "Old content"
     mock_existing.importance = 0.5
@@ -48,10 +47,10 @@ async def test_store_memory_update_existing(mock_db_session):
     ltm = LongTermMemoryManager()
     ltm.embedder.embed = AsyncMock(return_value=[0.2] * 768)
 
-    mem = await ltm.store_memory(
+    mem = await ltm.update_memory(
         owner_id="user_123",
-        content="Updated preference for Neovim",
         key="editor_pref",
+        content="Updated preference for Neovim",
         importance=0.9,
     )
 
@@ -62,10 +61,10 @@ async def test_store_memory_update_existing(mock_db_session):
 
 
 @pytest.mark.anyio
-@patch("app.pipeline.memory.ltm.db_session")
+@patch("app.pipeline.context.memory.ltm.db_session")
 async def test_get_memories(mock_db_session):
     mock_db = MagicMock()
-    mock_db.query.return_value.filter_by.return_value.order_by.return_value.all.return_value = []
+    mock_db.query.return_value.filter_by.return_value.order_by.return_value.limit.return_value.all.return_value = []
     mock_db_session.return_value.__enter__.return_value = mock_db
 
     ltm = LongTermMemoryManager()
@@ -74,15 +73,15 @@ async def test_get_memories(mock_db_session):
 
 
 @pytest.mark.anyio
-@patch("app.pipeline.memory.ltm.db_session")
-async def test_search_memories(mock_db_session):
+@patch("app.pipeline.context.memory.ltm.db_session")
+async def test_get_memories_with_semantic_query(mock_db_session):
     mock_db = MagicMock()
     mock_db.bind.dialect.name = "postgresql"
-    mock_db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+    mock_db.query.return_value.filter_by.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
     mock_db_session.return_value.__enter__.return_value = mock_db
 
     ltm = LongTermMemoryManager()
     ltm.embedder.embed = AsyncMock(return_value=[0.1] * 768)
 
-    results = await ltm.search_memories(owner_id="user_123", query_text="editor")
+    results = await ltm.get_memories(owner_id="user_123", query="editor")
     assert results == []

@@ -2,7 +2,7 @@ import uuid
 import asyncio
 from app.core.database import db_session
 from app.models.models import ToolModel
-from app.pipeline.memory.embedder import Embedder
+from app.pipeline.context.memory.embedder import Embedder
 from app.pipeline.tools.meta.registry import Tool, ToolRegistry
 from app.pipeline.tools.meta.policies.safety import Safety, Risk, PermissionLevel
 

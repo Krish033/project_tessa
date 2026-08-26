@@ -8,7 +8,7 @@ async def test_build():
     manager = ContextManager()
 
     manager.tr.aretrieve = AsyncMock(return_value=[])
-    manager.ltm.search_memory_texts = AsyncMock(return_value=[])
+    manager.ltm.get_memories = AsyncMock(return_value=[])
 
     manager.ctx = [
         {

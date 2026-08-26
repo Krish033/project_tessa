@@ -5,15 +5,11 @@ from logging.config import fileConfig
 # Add project root to sys.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from dotenv import load_dotenv
 from sqlalchemy import create_engine, pool
 from alembic import context
 
 from app.core.database import Base, DATABASE_URL
 import app.models.models  # Import ORM models so Base.metadata is populated
-
-# Load environment variables
-load_dotenv()
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

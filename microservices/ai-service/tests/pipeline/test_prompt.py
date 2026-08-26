@@ -1,4 +1,4 @@
-from app.pipeline.prompt import SYSTEM_PROMPT
+from app.core.prompt import SYSTEM_PROMPT
 
 
 def test_system_prompt_structure():

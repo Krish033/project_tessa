@@ -1,13 +1,10 @@
-import os
 from contextlib import contextmanager
 from typing import Generator
 
-from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
-# Load environment variables from .env
-load_dotenv()
+from app.core.config import config
 
 # Patch pgvector Vector._from_db for psycopg3 compatibility
 try:
@@ -22,17 +19,8 @@ except Exception:
     pass
 
 def get_database_url() -> str:
-    """Construct or retrieve PostgreSQL DATABASE_URL from environment variables."""
-    url = os.getenv("DATABASE_URL")
-    if url:
-        return url
-
-    user = os.getenv("POSTGRES_USER", "postgres")
-    password = os.getenv("POSTGRES_PASSWORD", "postgres")
-    host = os.getenv("POSTGRES_HOST", "localhost")
-    port = os.getenv("POSTGRES_PORT", "5432")
-    db_name = os.getenv("POSTGRES_DB", "ai_service_db")
-    return f"postgresql://{user}:{password}@{host}:{port}/{db_name}"
+    """Construct or retrieve PostgreSQL DATABASE_URL from config."""
+    return config.database_url
 
 import warnings
 warnings.filterwarnings("ignore")

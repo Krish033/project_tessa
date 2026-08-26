@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock
-from app.pipeline.memory.embedder import Embedder
+from app.pipeline.context.memory.embedder import Embedder
 
 
 @pytest.mark.anyio
