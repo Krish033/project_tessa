@@ -1,5 +1,5 @@
 import ollama
-from app.core.config import config
+from microservices.intelligence.app.core.config import config
 
 OPTIONS = {
     "temperature": 0.0,
