@@ -1,5 +1,34 @@
 import type { Metadata } from "next";
+import localFont from "next/font/local";
 import "./globals.css";
+import Script from "next/script";
+
+const mononoki = localFont({
+  src: [
+    {
+      path: "../public/fonts/mononoki-latin-400-normal.woff2",
+      weight: "400",
+      style: "normal",
+    },
+    {
+      path: "../public/fonts/mononoki-latin-400-italic.woff2",
+      weight: "400",
+      style: "italic",
+    },
+    {
+      path: "../public/fonts/mononoki-latin-700-normal.woff2",
+      weight: "700",
+      style: "normal",
+    },
+    {
+      path: "../public/fonts/mononoki-latin-700-italic.woff2",
+      weight: "700",
+      style: "italic",
+    },
+  ],
+  variable: "--font-mononoki",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Tessa Client",
@@ -12,8 +41,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full antialiased">
+    <html lang="en" className={`h-full antialiased ${mononoki.variable}`}>
       <body className="min-h-full flex flex-col font-mono">{children}</body>
+
+       <Script
+          id="sentinal"
+          src="http://localhost:8000/sdk/capture.js"
+          data-key="TEST_KEY"
+          strategy="afterInteractive"
+        />
     </html>
   );
 }
