@@ -8,6 +8,7 @@ import {
   ArrowUpDownIcon,
   Folder01Icon,
 } from "@hugeicons/core-free-icons";
+import CreateProjectModal from "@/components/shared/CreateProjectModal";
 
 interface ProjectItem {
   id: string;
@@ -17,7 +18,8 @@ interface ProjectItem {
 }
 
 export default function ProjectsPage() {
-  const [projects] = useState<ProjectItem[]>([
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [projects, setProjects] = useState<ProjectItem[]>([
     {
       id: "mysteries",
       name: "Mysteries",
@@ -56,7 +58,8 @@ export default function ProjectsPage() {
           {/* New Project Button */}
           <button
             type="button"
-            className="px-3.5 py-1.5 rounded-full bg-white text-black hover:bg-[#eaeaea] font-medium text-[13px] tracking-tight transition-colors shadow-sm"
+            onClick={() => setIsCreateOpen(true)}
+            className="px-3.5 py-1.5 rounded-full bg-white text-black hover:bg-[#eaeaea] font-medium text-[13px] tracking-tight transition-colors shadow-sm cursor-pointer"
           >
             New project
           </button>
@@ -95,6 +98,23 @@ export default function ProjectsPage() {
           </Link>
         ))}
       </div>
+
+      {/* Create Project Modal */}
+      <CreateProjectModal
+        isOpen={isCreateOpen}
+        onClose={() => setIsCreateOpen(false)}
+        onCreate={({ name, description }) => {
+          setProjects((prev) => [
+            {
+              id: name.toLowerCase().replace(/\s+/g, "-"),
+              name,
+              lastUpdated: "Just now",
+              href: `/projects/${name.toLowerCase().replace(/\s+/g, "-")}`,
+            },
+            ...prev,
+          ]);
+        }}
+      />
     </div>
   );
 }

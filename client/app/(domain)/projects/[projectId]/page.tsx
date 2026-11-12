@@ -1,9 +1,13 @@
 "use client";
 
-import React, { useState, Suspense } from "react";
+import React, { useState, Suspense, useRef } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
+import SetProjectInstructionsModal from "@/components/shared/SetProjectInstructionsModal";
+import ContextMenu from "@/components/shared/ContextMenu";
+import AddTextContentModal from "@/components/shared/AddTextContentModal";
+import ProjectMemoryModal from "@/components/shared/ProjectMemoryModal";
 import {
   Add01Icon,
   Mic01Icon,
@@ -15,8 +19,14 @@ import {
 
 function ProjectDetailContent() {
   const params = useParams();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [prompt, setPrompt] = useState("");
   const [activeMode, setActiveMode] = useState<"Chat" | "Cowork">("Chat");
+  const [isInstructionsOpen, setIsInstructionsOpen] = useState(false);
+  const [isContextOpen, setIsContextOpen] = useState(false);
+  const [isAddTextOpen, setIsAddTextOpen] = useState(false);
+  const [isMemoryOpen, setIsMemoryOpen] = useState(false);
+  const [instructionsText, setInstructionsText] = useState("");
 
   const recentChats = [
     {
@@ -184,14 +194,15 @@ function ProjectDetailContent() {
               <span className="text-[13.5px] font-semibold text-white">Instructions</span>
               <button
                 type="button"
-                className="text-[#888888] hover:text-white transition-colors"
+                onClick={() => setIsInstructionsOpen(true)}
+                className="p-1 rounded hover:bg-[#252525] text-[#888888] hover:text-white transition-colors cursor-pointer"
                 title="Add instructions"
               >
                 <HugeiconsIcon icon={Add01Icon} size={16} strokeWidth={2.2} />
               </button>
             </div>
             <p className="text-[12px] text-[#777777] leading-relaxed">
-              Add instructions to tailor Claude&apos;s responses
+              {instructionsText || "Add instructions to tailor Claude's responses"}
             </p>
           </div>
 
@@ -207,7 +218,8 @@ function ProjectDetailContent() {
               </div>
               <button
                 type="button"
-                className="text-[12.5px] font-semibold text-white hover:text-[#cccccc] transition-colors"
+                onClick={() => setIsMemoryOpen(true)}
+                className="text-[12.5px] font-semibold text-white hover:text-[#cccccc] transition-colors cursor-pointer"
               >
                 View memory
               </button>
@@ -219,15 +231,36 @@ function ProjectDetailContent() {
 
           {/* Context Section */}
           <div className="space-y-2.5 pt-1 border-t border-[#232323]">
-            <div className="flex items-center justify-between pt-2">
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+            />
+
+            <div className="flex items-center justify-between pt-2 relative">
               <span className="text-[13.5px] font-semibold text-white">Context</span>
-              <button
-                type="button"
-                className="text-[#888888] hover:text-white transition-colors"
-                title="Add context"
-              >
-                <HugeiconsIcon icon={Add01Icon} size={16} strokeWidth={2.2} />
-              </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsContextOpen(!isContextOpen)}
+                  className={`p-1 rounded text-[#888888] hover:text-white transition-colors cursor-pointer ${
+                    isContextOpen ? "text-white bg-[#252525]" : "hover:bg-[#252525]"
+                  }`}
+                  title="Add context"
+                >
+                  <HugeiconsIcon icon={Add01Icon} size={16} strokeWidth={2.2} />
+                </button>
+
+                {/* Context Menu Popup */}
+                <ContextMenu
+                  isOpen={isContextOpen}
+                  onClose={() => setIsContextOpen(false)}
+                  onUpload={() => fileInputRef.current?.click()}
+                  onAddText={() => setIsAddTextOpen(true)}
+                />
+              </div>
             </div>
 
             {/* Context Dropzone / Placeholder Box */}
@@ -260,6 +293,30 @@ function ProjectDetailContent() {
           </div>
         </div>
       </div>
+
+      {/* Set Project Instructions Modal */}
+      <SetProjectInstructionsModal
+        isOpen={isInstructionsOpen}
+        onClose={() => setIsInstructionsOpen(false)}
+        projectName="Broward Partnership for kids"
+        initialInstructions={instructionsText}
+        onSave={(saved) => setInstructionsText(saved)}
+      />
+
+      {/* Add Text Content Modal */}
+      <AddTextContentModal
+        isOpen={isAddTextOpen}
+        onClose={() => setIsAddTextOpen(false)}
+        onAdd={({ title, content }) => {
+          console.log("Added text content:", title, content);
+        }}
+      />
+
+      {/* Project Memory Modal */}
+      <ProjectMemoryModal
+        isOpen={isMemoryOpen}
+        onClose={() => setIsMemoryOpen(false)}
+      />
     </div>
   );
 }
