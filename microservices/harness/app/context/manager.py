@@ -21,10 +21,12 @@ class ContextManager:
         summarizer: Optional[Summarizer] = None,
         retriever: Optional[ToolRetriever] = None,
         ltm: Optional[LongTermMemoryManager] = None,
+        persist: bool = False,
     ):
         self.conversation_id = conversation_id or "1fb369f7-4299-439d-8ec7-4775751a5f5b"
         self.llm = llm
-        self.data_pipeline = data_pipeline or DataPipeline()
+        self.persist = persist
+        self.data_pipeline = data_pipeline or (DataPipeline() if persist else None)
         self.summarizer = summarizer or (Summarizer(llm) if llm else None)
         self.tr = retriever or ToolRetriever()
         self.ltm = ltm or LongTermMemoryManager()
@@ -34,13 +36,15 @@ class ContextManager:
 
 
     async def load(self) -> None:
-        self.ctx, self.loaded_summary = await self.data_pipeline.load(self.conversation_id)
+        if self.data_pipeline:
+            self.ctx, self.loaded_summary = await self.data_pipeline.load(self.conversation_id)
 
 
     def add(self, role: str, content: str) -> None:
         msg_id = str(uuid.uuid4())
         self.ctx.append({"id": msg_id, "role": role, "content": content})
-        self.data_pipeline.persist_message(self.conversation_id, msg_id, role, content)
+        if self.persist and self.data_pipeline:
+            self.data_pipeline.persist_message(self.conversation_id, msg_id, role, content)
 
 
     def get_latest_user_prompt(self) -> str:

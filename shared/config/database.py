@@ -54,6 +54,33 @@ SessionLocal = sessionmaker(
 Base = declarative_base()
 
 
+# Async Engine & Session for async endpoints
+def get_async_database_url() -> str:
+    url = get_database_url()
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
+
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+
+async_engine = create_async_engine(
+    get_async_database_url(),
+    pool_pre_ping=True,
+    pool_size=10,
+    max_overflow=20,
+)
+
+AsyncSessionLocal = async_sessionmaker(
+    bind=async_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
+
+async def get_async_db():
+    async with AsyncSessionLocal() as session:
+        yield session
+
+
 def get_db() -> Generator[Session, None, None]:
     """FastAPI Dependency Generator for providing database session."""
     db = SessionLocal()

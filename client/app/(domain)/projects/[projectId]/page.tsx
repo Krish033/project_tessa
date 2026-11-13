@@ -2,12 +2,13 @@
 
 import React, { useState, Suspense, useRef } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import SetProjectInstructionsModal from "@/components/shared/SetProjectInstructionsModal";
 import ContextMenu from "@/components/shared/ContextMenu";
 import AddTextContentModal from "@/components/shared/AddTextContentModal";
 import ProjectMemoryModal from "@/components/shared/ProjectMemoryModal";
+import { useProject, useUpdateProject, useCreateChat } from "@/lib/hooks";
 import {
   Add01Icon,
   Mic01Icon,
@@ -19,6 +20,8 @@ import {
 
 function ProjectDetailContent() {
   const params = useParams();
+  const router = useRouter();
+  const projectId = (params?.projectId as string) || "";
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [prompt, setPrompt] = useState("");
   const [activeMode, setActiveMode] = useState<"Chat" | "Cowork">("Chat");
@@ -26,16 +29,31 @@ function ProjectDetailContent() {
   const [isContextOpen, setIsContextOpen] = useState(false);
   const [isAddTextOpen, setIsAddTextOpen] = useState(false);
   const [isMemoryOpen, setIsMemoryOpen] = useState(false);
-  const [instructionsText, setInstructionsText] = useState("");
 
-  const recentChats = [
-    {
-      id: "black-dahlia",
-      title: "The Black Dahlia murder case",
-      timestamp: "2 hours ago",
-      href: "/chats/black-dahlia",
-    },
-  ];
+  const { data: project, isLoading } = useProject(projectId);
+  const updateProjectMutation = useUpdateProject();
+  const createChatMutation = useCreateChat();
+
+  const handleStartChat = async () => {
+    if (!prompt.trim()) return;
+    const userPrompt = prompt.trim();
+    setPrompt("");
+    try {
+      const newChat = await createChatMutation.mutateAsync({
+        title: userPrompt.slice(0, 40),
+        project_id: projectId,
+        initial_message: userPrompt,
+      });
+      router.push(`/chats/${newChat.id}`);
+    } catch (err) {
+      console.error("Failed to start chat in project", err);
+    }
+  };
+
+  const projectName = project?.name || "Project";
+  const projectDesc = project?.description || "No description provided.";
+  const instructionsText = project?.instructions || "";
+  const recentChats = project?.chats || [];
 
   return (
     <div className="min-h-full flex-1 bg-[#141414] text-white font-mono select-none px-6 py-6 md:px-12 md:py-8 overflow-y-auto">
@@ -43,13 +61,10 @@ function ProjectDetailContent() {
       <div className="flex items-start justify-between pb-3">
         <div>
           <h1 className="text-[28px] md:text-[32px] font-semibold text-white tracking-tight">
-            Mysteries
+            {isLoading ? "Loading..." : projectName}
           </h1>
           <p className="mt-2 text-[#cccccc] text-[13.5px] leading-relaxed max-w-3xl">
-            This is a folder where i store my case reports on mysteries and crime detections
-          </p>
-          <p className="mt-2 text-[#999999] text-[13px] leading-relaxed max-w-3xl">
-            i used to play the detective game when i am bored, like detect the previously solved cases, murders or crimes by my own, might ask clues_
+            {projectDesc}
           </p>
         </div>
 
@@ -86,7 +101,13 @@ function ProjectDetailContent() {
               <textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                placeholder="How can I help you today?"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleStartChat();
+                  }
+                }}
+                placeholder="How can I help you today? (Press Enter to start chat)"
                 rows={2}
                 className="w-full bg-transparent resize-none border-none outline-none text-[#ececec] placeholder-[#666666] text-[14px] leading-relaxed font-mono"
               />
@@ -167,22 +188,28 @@ function ProjectDetailContent() {
               Recents
             </h2>
 
-            <div className="space-y-1">
-              {recentChats.map((chat) => (
-                <Link
-                  key={chat.id}
-                  href={chat.href}
-                  className="flex items-center justify-between py-2.5 px-2 rounded-xl hover:bg-[#1a1a1a] transition-colors group"
-                >
-                  <span className="text-[13.5px] text-[#e0e0e0] group-hover:text-white font-medium">
-                    {chat.title}
-                  </span>
-                  <span className="text-[12px] text-[#707070] group-hover:text-[#909090] transition-colors">
-                    {chat.timestamp}
-                  </span>
-                </Link>
-              ))}
-            </div>
+            {recentChats.length === 0 ? (
+              <p className="text-[13px] text-[#666666]">No chats in this project yet.</p>
+            ) : (
+              <div className="space-y-1">
+                {recentChats.map((chat) => (
+                  <Link
+                    key={chat.id}
+                    href={`/chats/${chat.id}`}
+                    className="flex items-center justify-between py-2.5 px-2 rounded-xl hover:bg-[#1a1a1a] transition-colors group"
+                  >
+                    <span className="text-[13.5px] text-[#e0e0e0] group-hover:text-white font-medium">
+                      {chat.title}
+                    </span>
+                    <span className="text-[12px] text-[#707070] group-hover:text-[#909090] transition-colors">
+                      {chat.updated_at
+                        ? new Date(chat.updated_at).toLocaleDateString()
+                        : "Recently"}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -298,9 +325,19 @@ function ProjectDetailContent() {
       <SetProjectInstructionsModal
         isOpen={isInstructionsOpen}
         onClose={() => setIsInstructionsOpen(false)}
-        projectName="Broward Partnership for kids"
+        projectName={projectName}
         initialInstructions={instructionsText}
-        onSave={(saved) => setInstructionsText(saved)}
+        onSave={async (saved) => {
+          try {
+            await updateProjectMutation.mutateAsync({
+              id: projectId,
+              data: { instructions: saved },
+            });
+            setIsInstructionsOpen(false);
+          } catch (err) {
+            console.error("Failed to update instructions", err);
+          }
+        }}
       />
 
       {/* Add Text Content Modal */}

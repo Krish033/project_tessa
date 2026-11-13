@@ -9,24 +9,18 @@ import {
   Folder01Icon,
 } from "@hugeicons/core-free-icons";
 import CreateProjectModal from "@/components/shared/CreateProjectModal";
-
-interface ProjectItem {
-  id: string;
-  name: string;
-  lastUpdated: string;
-  href?: string;
-}
+import { useProjects, useCreateProject } from "@/lib/hooks";
 
 export default function ProjectsPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [projects, setProjects] = useState<ProjectItem[]>([
-    {
-      id: "mysteries",
-      name: "Mysteries",
-      lastUpdated: "2 hours ago",
-      href: "/projects/mysteries",
-    },
-  ]);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const { data: projects = [], isLoading } = useProjects();
+  const createProjectMutation = useCreateProject();
+
+  const filteredProjects = projects.filter((p) =>
+    p.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div className="min-h-full flex-1 bg-[#141414] text-white font-mono select-none px-8 py-7 md:px-12 md:py-8">
@@ -67,52 +61,56 @@ export default function ProjectsPage() {
       </div>
 
       {/* Projects Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {projects.map((project) => (
-          <Link
-            key={project.id}
-            href={project.href || "#"}
-            className="relative flex items-center justify-between p-3.5 rounded-2xl bg-[#1e1e1e] hover:bg-[#252525] border border-[#2b2b2b] hover:border-[#383838] transition-all group overflow-hidden"
-          >
-            {/* Left Project Icon + Info */}
-            <div className="flex items-center gap-3 min-w-0 pr-8">
-              {/* Folder Icon badge container */}
-              <div className="w-10 h-10 rounded-xl bg-[#262626] border border-[#303030] flex items-center justify-center shrink-0 text-[#a0a0a0] group-hover:text-white transition-colors">
-                <HugeiconsIcon icon={Folder01Icon} size={19} strokeWidth={2} />
+      {isLoading ? (
+        <div className="text-[#888888] text-[14px]">Loading projects...</div>
+      ) : filteredProjects.length === 0 ? (
+        <div className="text-[#666666] text-[14px]">No projects yet. Click &quot;New project&quot; to create one.</div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {filteredProjects.map((project) => (
+            <Link
+              key={project.id}
+              href={`/projects/${project.id}`}
+              className="relative flex items-center justify-between p-3.5 rounded-2xl bg-[#1e1e1e] hover:bg-[#252525] border border-[#2b2b2b] hover:border-[#383838] transition-all group overflow-hidden"
+            >
+              {/* Left Project Icon + Info */}
+              <div className="flex items-center gap-3 min-w-0 pr-8">
+                {/* Folder Icon badge container */}
+                <div className="w-10 h-10 rounded-xl bg-[#262626] border border-[#303030] flex items-center justify-center shrink-0 text-[#a0a0a0] group-hover:text-white transition-colors">
+                  <HugeiconsIcon icon={Folder01Icon} size={19} strokeWidth={2} />
+                </div>
+
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[14px] font-semibold text-[#f0f0f0] group-hover:text-white truncate">
+                    {project.name}
+                  </span>
+                  <span className="text-[12px] text-[#787878] group-hover:text-[#949494] transition-colors truncate">
+                    {project.updated_at
+                      ? new Date(project.updated_at).toLocaleDateString()
+                      : "Recently"}
+                  </span>
+                </div>
               </div>
 
-              <div className="flex flex-col min-w-0">
-                <span className="text-[14px] font-semibold text-[#f0f0f0] group-hover:text-white truncate">
-                  {project.name}
-                </span>
-                <span className="text-[12px] text-[#787878] group-hover:text-[#949494] transition-colors truncate">
-                  {project.lastUpdated}
-                </span>
+              {/* Folded / Dog-ear Corner Accent (Top-Right) */}
+              <div className="absolute top-0 right-0 w-6 h-6 overflow-hidden pointer-events-none">
+                <div className="absolute -top-3 -right-3 w-6 h-6 bg-[#2a2a2a] group-hover:bg-[#343434] rotate-45 border-b border-l border-[#3a3a3a] transition-colors" />
               </div>
-            </div>
-
-            {/* Folded / Dog-ear Corner Accent (Top-Right) */}
-            <div className="absolute top-0 right-0 w-6 h-6 overflow-hidden pointer-events-none">
-              <div className="absolute -top-3 -right-3 w-6 h-6 bg-[#2a2a2a] group-hover:bg-[#343434] rotate-45 border-b border-l border-[#3a3a3a] transition-colors" />
-            </div>
-          </Link>
-        ))}
-      </div>
+            </Link>
+          ))}
+        </div>
+      )}
 
       {/* Create Project Modal */}
       <CreateProjectModal
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
-        onCreate={({ name, description }) => {
-          setProjects((prev) => [
-            {
-              id: name.toLowerCase().replace(/\s+/g, "-"),
-              name,
-              lastUpdated: "Just now",
-              href: `/projects/${name.toLowerCase().replace(/\s+/g, "-")}`,
-            },
-            ...prev,
-          ]);
+        onCreate={async ({ name, description }) => {
+          try {
+            await createProjectMutation.mutateAsync({ name, description });
+          } catch (err) {
+            console.error("Failed to create project", err);
+          }
         }}
       />
     </div>

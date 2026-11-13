@@ -1,6 +1,7 @@
 """RabbitMQ connection manager and event bus for inter-service communication."""
 
 import asyncio
+from contextlib import suppress
 import json
 import uuid
 from collections.abc import Callable, Coroutine
@@ -222,7 +223,7 @@ class RabbitMQConnection:
                 if not future.done():
                     future.set_result(result)
 
-        await callback_queue.consume(_on_response)
+        consumer_tag = await callback_queue.consume(_on_response)
 
         # Publish the RPC request
         await self._rpc_exchange.publish(
@@ -243,7 +244,10 @@ class RabbitMQConnection:
             logger.error("rabbitmq_rpc_timeout", method=method, timeout=timeout)
             raise TimeoutError(f"RPC call to {method} timed out after {timeout}s")
         finally:
-            await callback_queue.delete()
+            with suppress(Exception):
+                await callback_queue.cancel(consumer_tag)
+            with suppress(Exception):
+                await callback_queue.delete(if_unused=False, if_empty=False)
 
 
 # Global singleton

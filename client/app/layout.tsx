@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import Script from "next/script";
+import QueryProvider from "@/lib/providers/QueryClientProvider";
 
 const mononoki = localFont({
   src: [
@@ -41,15 +42,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`h-full antialiased ${mononoki.variable}`}>
-      <body className="min-h-full flex flex-col font-mono">{children}</body>
-
-       <Script
-          id="sentinal"
-          src="http://localhost:8000/sdk/capture.js"
-          data-key="TEST_KEY"
-          strategy="afterInteractive"
-        />
-    </html>
+    <QueryProvider>
+      <html lang="en" className={`h-full antialiased ${mononoki.variable}`}>
+        <body className="min-h-full flex flex-col font-mono">{children}</body>
+      </html>
+    </QueryProvider>
   );
 }

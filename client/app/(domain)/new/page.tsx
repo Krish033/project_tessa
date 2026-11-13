@@ -16,11 +16,13 @@ import {
   Idea01Icon,
   ArrowUp02Icon,
 } from "@hugeicons/core-free-icons";
+import { useCreateChat } from "@/lib/hooks";
 
 export default function HomePage() {
   const router = useRouter();
   const [prompt, setPrompt] = useState("");
   const [activeMode, setActiveMode] = useState<"Chat" | "Cowork">("Chat");
+  const createChatMutation = useCreateChat();
 
   const chips = [
     { label: "Code", icon: CodeXmlIcon },
@@ -30,11 +32,19 @@ export default function HomePage() {
     { label: "Tessa's choice", icon: Idea01Icon },
   ];
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!prompt.trim()) return;
-    // Generate a random alphanumeric chat ID (e.g. chat-7f2a9b)
-    const randomChatId = "chat-" + Math.random().toString(36).substring(2, 9);
-    router.push(`/chats/${randomChatId}`);
+    const userPrompt = prompt.trim();
+    setPrompt("");
+    try {
+      const newChat = await createChatMutation.mutateAsync({
+        title: userPrompt.slice(0, 40),
+        initial_message: userPrompt,
+      });
+      router.push(`/chats/${newChat.id}`);
+    } catch (err) {
+      console.error("Failed to create chat", err);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

@@ -18,17 +18,19 @@ import SearchModal from "@/components/shared/Modal";
 import ProfileDropdown from "@/components/shared/ProfileDropdown";
 import CreateProjectModal from "@/components/shared/CreateProjectModal";
 import SettingsModal from "@/components/shared/SettingsModal";
+import { useProjects, useChats, useCreateProject } from "@/lib/hooks";
+import { ProjectItem, ChatItem } from "@/lib/api";
 
-interface HistoryItem {
-  id: string;
-  title: string;
+interface SidebarProps {
+  initialProjects?: ProjectItem[];
+  initialChats?: ChatItem[];
 }
 
-export default function Sidebar() {
+export default function Sidebar({ initialProjects, initialChats }: SidebarProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [pinnedOpen, setPinnedOpen] = useState(true);
-  const [mysteriesOpen, setMysteriesOpen] = useState(true);
+  const [projectsOpen, setProjectsOpen] = useState<Record<string, boolean>>({});
   const [chatsOpen, setChatsOpen] = useState(true);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -36,19 +38,14 @@ export default function Sidebar() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState("account");
 
-  const pinnedItems: HistoryItem[] = [
-    {
-      id: "pin-1",
-      title: "The Black Dahlia murder case",
-    },
-  ];
+  // React Query fetching with initialData from server cache
+  const { data: projects = [] } = useProjects(initialProjects);
+  const { data: allChats = [] } = useChats(undefined, initialChats);
+  const createProjectMutation = useCreateProject();
 
-  const recentChats: HistoryItem[] = [
-    {
-      id: "chat-1",
-      title: "Training a model from scratch t...",
-    },
-  ];
+  // Chats not belonging to any project (or top recent chats)
+  const standaloneChats = allChats.filter((c) => !c.project_id);
+  const displayChats = standaloneChats.length > 0 ? standaloneChats : allChats;
 
   // Global keyboard shortcuts:
   // 1. Ctrl+Shift+K to open Search modal
@@ -208,14 +205,14 @@ export default function Sidebar() {
 
         {/* Scrollable Recents / Pinned section */}
         <div className="flex-1 overflow-y-auto px-1 py-2 mt-2 space-y-3">
-          {/* Pinned Section */}
+          {/* Projects / Pinned Section */}
           <div>
             <button
               type="button"
               onClick={() => setPinnedOpen(!pinnedOpen)}
               className="flex items-center gap-1.5 px-2 py-0.5 text-[13px] font-semibold text-white/80 hover:text-white transition-colors"
             >
-              <span>Pinned</span>
+              <span>Projects</span>
               <HugeiconsIcon
                 icon={ChevronDownIcon}
                 size={14}
@@ -228,67 +225,86 @@ export default function Sidebar() {
 
             {pinnedOpen && (
               <div className="mt-0.5 space-y-0.5">
-                <div
-                  className={`flex items-center gap-2.5 px-2.5 py-1 text-[14px] font-medium rounded-lg transition-colors group/mysteries ${
-                    pathname.startsWith("/projects/1") || pathname.startsWith("/projects/mysteries")
-                      ? "bg-[#383737] text-white"
-                      : "text-white/80 hover:text-white hover:bg-[#222222]"
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setMysteriesOpen(!mysteriesOpen);
-                    }}
-                    title={mysteriesOpen ? "Collapse folder" : "Expand folder"}
-                    className="p-0.5 text-white/80 hover:text-white rounded transition-transform cursor-pointer"
-                  >
-                    <HugeiconsIcon
-                      icon={Folder01Icon}
-                      size={18}
-                      strokeWidth={2}
-                      className="text-white shrink-0"
-                    />
-                  </button>
+                {projects.map((project) => {
+                  const isFolderOpen = projectsOpen[project.id] ?? true;
+                  const isProjectActive =
+                    pathname === `/projects/${project.id}` ||
+                    pathname.startsWith(`/projects/${project.id}/`);
+                  const projectChats = project.chats || [];
 
-                  <Link
-                    href="/projects/1"
-                    className="truncate flex-1 hover:text-white text-white/90"
-                  >
-                    Mysteries
-                  </Link>
-                </div>
-
-                {mysteriesOpen && (
-                  <div className="pl-6 space-y-0.5 animate-in fade-in duration-150">
-                    {pinnedItems.map((item: { id: string; title: string }) => {
-                      const isActive =
-                        pathname === `/chats/${item.id}` ||
-                        pathname.endsWith(item.id);
-                      return (
-                        <Link
-                          href={`/chats/${item.id}`}
-                          key={item.id}
+                  return (
+                    <div key={project.id} className="space-y-0.5">
+                      <div
+                        className={`flex items-center gap-2.5 px-2.5 py-1 text-[14px] font-medium rounded-lg transition-colors group/project ${
+                          isProjectActive
+                            ? "bg-[#383737] text-white"
+                            : "text-white/80 hover:text-white hover:bg-[#222222]"
+                        }`}
+                      >
+                        <button
                           type="button"
-                          className={`w-full flex items-center gap-2.5 px-2 py-1 rounded-lg transition-colors text-left ${
-                            isActive
-                              ? "bg-[#383737] text-white font-medium"
-                              : "text-white/80 hover:text-white hover:bg-[#222222]"
-                          }`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setProjectsOpen((prev) => ({
+                              ...prev,
+                              [project.id]: !isFolderOpen,
+                            }));
+                          }}
+                          title={isFolderOpen ? "Collapse folder" : "Expand folder"}
+                          className="p-0.5 text-white/80 hover:text-white rounded transition-transform cursor-pointer"
                         >
-                          <span
-                            className={`w-2 h-2 rounded-full border shrink-0 ${
-                              isActive ? "border-white bg-white" : "border-white/60"
-                            }`}
+                          <HugeiconsIcon
+                            icon={Folder01Icon}
+                            size={18}
+                            strokeWidth={2}
+                            className="text-white shrink-0"
                           />
-                          <span className="truncate text-[14px]">{item.title}</span>
+                        </button>
+
+                        <Link
+                          href={`/projects/${project.id}`}
+                          className="truncate flex-1 hover:text-white text-white/90"
+                        >
+                          {project.name}
                         </Link>
-                      );
-                    })}
-                  </div>
-                )}
+                      </div>
+
+                      {isFolderOpen && projectChats.length > 0 && (
+                        <div className="pl-6 space-y-0.5 animate-in fade-in duration-150">
+                          {projectChats.map((chat) => {
+                            const isChatActive =
+                              pathname === `/chats/${chat.id}` ||
+                              pathname.endsWith(chat.id);
+                            return (
+                              <Link
+                                href={`/chats/${chat.id}`}
+                                key={chat.id}
+                                type="button"
+                                className={`w-full flex items-center gap-2.5 px-2 py-1 rounded-lg transition-colors text-left ${
+                                  isChatActive
+                                    ? "bg-[#383737] text-white font-medium"
+                                    : "text-white/80 hover:text-white hover:bg-[#222222]"
+                                }`}
+                              >
+                                <span
+                                  className={`w-2 h-2 rounded-full border shrink-0 ${
+                                    isChatActive
+                                      ? "border-white bg-white"
+                                      : "border-white/60"
+                                  }`}
+                                />
+                                <span className="truncate text-[14px]">
+                                  {chat.title}
+                                </span>
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -323,14 +339,14 @@ export default function Sidebar() {
 
             {chatsOpen && (
               <div className="mt-0.5 space-y-0.5">
-                {recentChats.map((item) => {
+                {displayChats.slice(0, 10).map((chat) => {
                   const isActive =
-                    pathname === `/chats/${item.id}` ||
-                    pathname.endsWith(item.id);
+                    pathname === `/chats/${chat.id}` ||
+                    pathname.endsWith(chat.id);
                   return (
                     <Link
-                      href={`/chats/${item.id}`}
-                      key={item.id}
+                      href={`/chats/${chat.id}`}
+                      key={chat.id}
                       type="button"
                       className={`w-full flex items-center gap-2.5 px-2.5 py-1 rounded-lg transition-colors text-left ${
                         isActive
@@ -343,7 +359,7 @@ export default function Sidebar() {
                           isActive ? "border-white bg-white" : "border-white/60"
                         }`}
                       />
-                      <span className="truncate text-[14px]">{item.title}</span>
+                      <span className="truncate text-[14px]">{chat.title}</span>
                     </Link>
                   );
                 })}
@@ -441,6 +457,14 @@ export default function Sidebar() {
       <CreateProjectModal
         isOpen={isCreateProjectOpen}
         onClose={() => setIsCreateProjectOpen(false)}
+        onCreate={async ({ name, description }) => {
+          try {
+            const newProj = await createProjectMutation.mutateAsync({ name, description });
+            router.push(`/projects/${newProj.id}`);
+          } catch (err) {
+            console.error("Failed to create project", err);
+          }
+        }}
       />
 
       {/* Settings Modal */}

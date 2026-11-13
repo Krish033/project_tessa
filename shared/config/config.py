@@ -22,6 +22,23 @@ class Settings(BaseSettings):
     POSTGRES_PORT: int = 5432
     POSTGRES_DB: str = "tessa"
 
+    # Gateway & App Configuration
+    gateway_port: int = 8000
+    harness_port: int = 8001
+    intelligence_port: int = 8002
+    app_version: str = "1.0.0"
+    debug: bool = False
+    environment: str = "development"
+    secret_key: str = "your_secure_random_32_character_secret_key_here"
+    frontend_url: str = "http://localhost:3000"
+    session_cookie_name: str = "tessa_session"
+    session_expiry_days: int = 7
+
+    # Google OAuth
+    google_login_client_id: Optional[str] = None
+    google_login_client_secret: Optional[str] = None
+    google_login_redirect_uri: str = "http://localhost:8000/api/v1/auth/google/callback"
+
     # Embeddings / Ollama Configuration
     OLLAMA_URL: str = "http://localhost:11434"
 

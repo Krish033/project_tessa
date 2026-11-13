@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from gateway.app.api.deps import (
+from app.api.deps import (
     get_current_user_optional,
     get_session_token,
     invalidate_session_cache,

@@ -18,13 +18,53 @@ def utc_now():
     return datetime.now(timezone.utc)
 
 
+class Project(Base):
+    __tablename__ = "projects"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    instructions = Column(Text, nullable=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+    conversations = relationship(
+        "Conversation",
+        back_populates="project",
+        cascade="all, delete-orphan",
+        order_by="Conversation.updated_at.desc()"
+    )
+    user = relationship("User", foreign_keys=[user_id])
+
+
+class Setting(Base):
+    """Stores key-value system & user settings (including LLM configurations)."""
+    __tablename__ = "settings"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    key = Column(String(100), nullable=False, index=True)
+    category = Column(String(50), nullable=False, default="general", index=True)  # e.g. "llm", "general"
+    value = Column(JSON, nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+    user = relationship("User", foreign_keys=[user_id])
+
+
 class Conversation(Base):
     __tablename__ = "conversations"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title = Column(String(255), nullable=True)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
+    project = relationship("Project", back_populates="conversations")
+    user = relationship("User", foreign_keys=[user_id])
     messages = relationship(
         "Message",
         back_populates="conversation",

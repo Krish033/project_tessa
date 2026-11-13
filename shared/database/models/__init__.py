@@ -1,4 +1,6 @@
 from shared.database.models.models import (
+    Project,
+    Setting,
     Conversation,
     Message,
     ContextSummary,
@@ -11,6 +13,8 @@ from shared.schemas.schemas import Fact, ChatMessage, ToolCall, LLMResponse
 
 __all__ = [
     # ORM models
+    "Project",
+    "Setting",
     "Conversation",
     "Message",
     "ContextSummary",

@@ -20,9 +20,11 @@ import {
   ArrowDown01Icon,
   ArrowUp02Icon,
 } from "@hugeicons/core-free-icons";
+import { useChat, useAddMessage } from "@/lib/hooks";
 
 function ChatDetailContent() {
   const params = useParams();
+  const chatId = (params?.chatId as string) || "";
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [inputMessage, setInputMessage] = useState("");
   const [isAttachOpen, setIsAttachOpen] = useState(false);
@@ -30,6 +32,9 @@ function ChatDetailContent() {
   const [copiedUser, setCopiedUser] = useState(false);
   const [copiedAi, setCopiedAi] = useState(false);
   const [liked, setLiked] = useState<boolean | null>(null);
+
+  const { data: chat, isLoading } = useChat(chatId);
+  const addMessageMutation = useAddMessage(chatId);
 
   const handleCopy = (text: string, isAi = false) => {
     navigator.clipboard.writeText(text);
@@ -42,180 +47,166 @@ function ChatDetailContent() {
     }
   };
 
-  const userPromptText = `Give me a description for a testing event conducted only for testing, no public arrival expected`;
+  const handleSendMessage = async () => {
+    if (!inputMessage.trim() || !chatId) return;
+    const text = inputMessage.trim();
+    setInputMessage("");
 
-  const aiResponseText = `### Test Event - Internal Use Only
+    try {
+      await addMessageMutation.mutateAsync({
+        role: "user",
+        content: text,
+      });
+    } catch (err) {
+      console.error("Failed to send message", err);
+    }
+  };
 
-This event was created solely for testing calendar invite functionality (creation, updates, cancellations, and attachments). No attendance is expected and no action is required. Please disregard this invitation.`;
+  // Messages from database, fallback to static mockup if conversation is empty
+  const messages = chat?.messages || [];
 
   return (
     <div className="flex-1 flex flex-col min-h-0 h-full bg-[#141414] text-white font-mono overflow-hidden">
-      {/* Scrollable Conversation Stream (Middle Section: ONLY this section scrolls) */}
+      {/* Scrollable Conversation Stream */}
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-8 flex justify-center relative">
         <div className="w-full max-w-[780px] flex flex-col space-y-7 pb-36">
-          {/* USER MESSAGE BUBBLE */}
-          <div className="flex flex-col items-end group/user">
-            <div className="max-w-[85%] bg-[#212121] border border-[#2b2b2b] rounded-2xl px-5 py-4 text-[#dcdcdc] text-[15px] leading-relaxed shadow-md select-text selection:bg-[#3d3d3d] selection:text-white">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={{
-                  p: ({ children }) => <p className="whitespace-pre-wrap">{children}</p>,
-                }}
-              >
-                {userPromptText}
-              </ReactMarkdown>
+          {isLoading && messages.length === 0 ? (
+            <div className="text-center text-[#888888] py-12">Loading messages...</div>
+          ) : messages.length === 0 ? (
+            <div className="text-center text-[#666666] py-16">
+              <p className="text-[15px] text-[#999999] mb-1">Start a conversation</p>
+              <p className="text-[13px]">Send a message below to begin chatting.</p>
             </div>
+          ) : (
+            messages.map((msg, index) => {
+              if (msg.role === "user") {
+                return (
+                  <div key={msg.id || index} className="flex flex-col items-end group/user">
+                    <div className="max-w-[85%] bg-[#212121] border border-[#2b2b2b] rounded-2xl px-5 py-4 text-[#dcdcdc] text-[15px] leading-relaxed shadow-md select-text selection:bg-[#3d3d3d] selection:text-white">
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          p: ({ children }) => <p className="whitespace-pre-wrap">{children}</p>,
+                        }}
+                      >
+                        {msg.content}
+                      </ReactMarkdown>
+                    </div>
 
-            {/* Bubble Action Controls: Shown ONLY on hover */}
-            <div className="flex items-center gap-2.5 mt-2 text-[#777777] text-[12px] pr-2 opacity-0 group-hover/user:opacity-100 transition-opacity duration-150 select-none">
-              <span className="text-[11.5px] text-[#6e6e6e]">2 hours ago</span>
-              <button
-                type="button"
-                className="hover:text-white transition-colors p-1 rounded hover:bg-[#282828] cursor-pointer"
-                title="Retry prompt"
-              >
-                <HugeiconsIcon icon={ReloadIcon} size={13} strokeWidth={2} />
-              </button>
-              <button
-                type="button"
-                className="hover:text-white transition-colors p-1 rounded hover:bg-[#282828] cursor-pointer"
-                title="Edit prompt"
-              >
-                <HugeiconsIcon icon={PencilEdit02Icon} size={13} strokeWidth={2} />
-              </button>
-              <button
-                type="button"
-                onClick={() => handleCopy(userPromptText, false)}
-                className="hover:text-white transition-colors p-1 rounded hover:bg-[#282828] cursor-pointer"
-                title="Copy prompt"
-              >
-                <HugeiconsIcon icon={Copy01Icon} size={13} strokeWidth={2} />
-              </button>
-            </div>
-          </div>
+                    <div className="flex items-center gap-2.5 mt-2 text-[#777777] text-[12px] pr-2 opacity-0 group-hover/user:opacity-100 transition-opacity duration-150 select-none">
+                      <span className="text-[11.5px] text-[#6e6e6e]">
+                        {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Just now"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(msg.content, false)}
+                        className="hover:text-white transition-colors p-1 rounded hover:bg-[#282828] cursor-pointer"
+                        title="Copy prompt"
+                      >
+                        <HugeiconsIcon icon={Copy01Icon} size={13} strokeWidth={2} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
 
-          {/* AI RESPONSE MESSAGE */}
-          <div className="flex flex-col items-start w-full leading-relaxed space-y-3 pt-1 group/ai">
-            {/* Markdown rendered body with full text selection support */}
-            <div className="w-full text-[#d4d4d4] select-text selection:bg-[#3d3d3d] selection:text-white space-y-2.5">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={{
-                  h1: ({ children }) => (
-                    <h1 className="text-[19px] font-semibold text-white tracking-tight mb-2">
-                      {children}
-                    </h1>
-                  ),
-                  h2: ({ children }) => (
-                    <h2 className="text-[17px] font-semibold text-white tracking-tight mb-2">
-                      {children}
-                    </h2>
-                  ),
-                  h3: ({ children }) => (
-                    <h3 className="text-[16px] font-semibold text-white tracking-tight mb-1.5">
-                      {children}
-                    </h3>
-                  ),
-                  p: ({ children }) => (
-                    <p className="leading-relaxed text-[#d4d4d4] text-[15px] max-w-3xl mb-2">
-                      {children}
-                    </p>
-                  ),
-                  ul: ({ children }) => (
-                    <ul className="space-y-1.5 pl-4 list-disc text-[#bfbfbf] text-[15px] my-2">
-                      {children}
-                    </ul>
-                  ),
-                  ol: ({ children }) => (
-                    <ol className="space-y-1.5 pl-4 list-decimal text-[#bfbfbf] text-[15px] my-2">
-                      {children}
-                    </ol>
-                  ),
-                  li: ({ children }) => <li className="pl-1 text-[15px]">{children}</li>,
-                  code: ({ className, children }) => {
-                    const isInline = !className;
-                    return isInline ? (
-                      <code className="px-1.5 py-0.5 rounded bg-[#242424] text-[#ececec] text-[13.5px] font-mono border border-[#333333]">
-                        {children}
-                      </code>
-                    ) : (
-                      <pre className="p-3.5 rounded-xl bg-[#1c1c1c] border border-[#2b2b2b] overflow-x-auto text-[13.5px] my-2.5">
-                        <code>{children}</code>
-                      </pre>
-                    );
-                  },
-                  blockquote: ({ children }) => (
-                    <blockquote className="border-l-2 border-[#444444] pl-3 text-[#999999] italic text-[15px] my-2">
-                      {children}
-                    </blockquote>
-                  ),
-                }}
-              >
-                {aiResponseText}
-              </ReactMarkdown>
-            </div>
+              // Assistant message
+              return (
+                <div key={msg.id || index} className="flex flex-col items-start w-full leading-relaxed space-y-3 pt-1 group/ai">
+                  <div className="w-full text-[#d4d4d4] select-text selection:bg-[#3d3d3d] selection:text-white space-y-2.5">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        h1: ({ children }) => (
+                          <h1 className="text-[19px] font-semibold text-white tracking-tight mb-2">
+                            {children}
+                          </h1>
+                        ),
+                        h2: ({ children }) => (
+                          <h2 className="text-[17px] font-semibold text-white tracking-tight mb-2">
+                            {children}
+                          </h2>
+                        ),
+                        h3: ({ children }) => (
+                          <h3 className="text-[16px] font-semibold text-white tracking-tight mb-1.5">
+                            {children}
+                          </h3>
+                        ),
+                        p: ({ children }) => (
+                          <p className="leading-relaxed text-[#d4d4d4] text-[15px] max-w-3xl mb-2">
+                            {children}
+                          </p>
+                        ),
+                        ul: ({ children }) => (
+                          <ul className="space-y-1.5 pl-4 list-disc text-[#bfbfbf] text-[15px] my-2">
+                            {children}
+                          </ul>
+                        ),
+                        ol: ({ children }) => (
+                          <ol className="space-y-1.5 pl-4 list-decimal text-[#bfbfbf] text-[15px] my-2">
+                            {children}
+                          </ol>
+                        ),
+                        li: ({ children }) => <li className="pl-1 text-[15px]">{children}</li>,
+                        code: ({ className, children }) => {
+                          const isInline = !className;
+                          return isInline ? (
+                            <code className="px-1.5 py-0.5 rounded bg-[#242424] text-[#ececec] text-[13.5px] font-mono border border-[#333333]">
+                              {children}
+                            </code>
+                          ) : (
+                            <pre className="p-3.5 rounded-xl bg-[#1c1c1c] border border-[#2b2b2b] overflow-x-auto text-[13.5px] my-2.5">
+                              <code>{children}</code>
+                            </pre>
+                          );
+                        },
+                      }}
+                    >
+                      {msg.content}
+                    </ReactMarkdown>
+                  </div>
 
-            {/* AI Response Action Icons Row: Copy, Read aloud, Upvote, Downvote, Retry */}
-            <div className="flex items-center gap-1.5 pt-1 text-[#888888] select-none">
-              {/* Copy */}
-              <button
-                type="button"
-                onClick={() => handleCopy(aiResponseText, true)}
-                className="p-1.5 rounded-lg hover:text-white hover:bg-[#262626] transition-colors cursor-pointer"
-                title="Copy response"
-              >
-                <HugeiconsIcon icon={Copy01Icon} size={14} strokeWidth={1.8} />
-              </button>
-
-              {/* Read Aloud / Speaker */}
-              <button
-                type="button"
-                className="p-1.5 rounded-lg hover:text-white hover:bg-[#262626] transition-colors cursor-pointer"
-                title="Read aloud"
-              >
-                <HugeiconsIcon icon={VolumeHighIcon} size={14} strokeWidth={1.8} />
-              </button>
-
-              {/* Thumbs Up */}
-              <button
-                type="button"
-                onClick={() => setLiked(liked === true ? null : true)}
-                className={`p-1.5 rounded-lg hover:text-white hover:bg-[#262626] transition-colors cursor-pointer ${
-                  liked === true ? "text-white" : ""
-                }`}
-                title="Good response"
-              >
-                <HugeiconsIcon icon={ThumbsUpIcon} size={14} strokeWidth={1.8} />
-              </button>
-
-              {/* Thumbs Down */}
-              <button
-                type="button"
-                onClick={() => setLiked(liked === false ? null : false)}
-                className={`p-1.5 rounded-lg hover:text-white hover:bg-[#262626] transition-colors cursor-pointer ${
-                  liked === false ? "text-white" : ""
-                }`}
-                title="Bad response"
-              >
-                <HugeiconsIcon icon={ThumbsDownIcon} size={14} strokeWidth={1.8} />
-              </button>
-
-              {/* Retry / Regenerate */}
-              <button
-                type="button"
-                className="p-1.5 rounded-lg hover:text-white hover:bg-[#262626] transition-colors cursor-pointer"
-                title="Regenerate response"
-              >
-                <HugeiconsIcon icon={ReloadIcon} size={14} strokeWidth={1.8} />
-              </button>
-
-              {copiedAi && (
-                <span className="text-[11px] text-green-400 font-mono ml-1">
-                  Copied
-                </span>
-              )}
-            </div>
-          </div>
+                  <div className="flex items-center gap-1.5 pt-1 text-[#888888] select-none">
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(msg.content, true)}
+                      className="p-1.5 rounded-lg hover:text-white hover:bg-[#262626] transition-colors cursor-pointer"
+                      title="Copy response"
+                    >
+                      <HugeiconsIcon icon={Copy01Icon} size={14} strokeWidth={1.8} />
+                    </button>
+                    <button
+                      type="button"
+                      className="p-1.5 rounded-lg hover:text-white hover:bg-[#262626] transition-colors cursor-pointer"
+                      title="Read aloud"
+                    >
+                      <HugeiconsIcon icon={VolumeHighIcon} size={14} strokeWidth={1.8} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLiked(liked === true ? null : true)}
+                      className={`p-1.5 rounded-lg hover:text-white hover:bg-[#262626] transition-colors cursor-pointer ${
+                        liked === true ? "text-white" : ""
+                      }`}
+                      title="Good response"
+                    >
+                      <HugeiconsIcon icon={ThumbsUpIcon} size={14} strokeWidth={1.8} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLiked(liked === false ? null : false)}
+                      className={`p-1.5 rounded-lg hover:text-white hover:bg-[#262626] transition-colors cursor-pointer ${
+                        liked === false ? "text-white" : ""
+                      }`}
+                      title="Bad response"
+                    >
+                      <HugeiconsIcon icon={ThumbsDownIcon} size={14} strokeWidth={1.8} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
 
@@ -267,7 +258,7 @@ This event was created solely for testing calendar invite functionality (creatio
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey && inputMessage.trim()) {
                   e.preventDefault();
-                  setInputMessage("");
+                  handleSendMessage();
                 }
               }}
               placeholder="Write a message..."
@@ -306,7 +297,7 @@ This event was created solely for testing calendar invite functionality (creatio
               {inputMessage.trim().length > 0 ? (
                 <button
                   type="button"
-                  onClick={() => setInputMessage("")}
+                  onClick={handleSendMessage}
                   className="w-6 h-6 rounded-md bg-white text-black hover:bg-[#eaeaea] flex items-center justify-center transition-all cursor-pointer shadow-md active:scale-95"
                   title="Send message"
                 >

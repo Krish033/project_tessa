@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { HugeiconsIcon } from "@hugeicons/react";
+import LLMSettingsView from "./LLMSettingsView";
 import {
   Search01Icon,
   Cancel01Icon,
@@ -17,6 +18,7 @@ import {
   ChevronDownIcon,
   Grid2X2Icon,
   FileCodeIcon,
+  AiBrain01Icon,
 } from "@hugeicons/core-free-icons";
 
 interface SettingsModalProps {
@@ -31,12 +33,13 @@ interface SearchResultItem {
   title: string;
   subtitle?: string;
   tab: string;
-  iconType: "account" | "appearance" | "claude" | "capabilities" | "notifications" | "privacy" | "billing" | "skills" | "connectors" | "plugins" | "customize" | "code";
+  iconType: "account" | "appearance" | "claude" | "capabilities" | "notifications" | "privacy" | "billing" | "skills" | "connectors" | "plugins" | "customize" | "code" | "llms";
 }
 
 const SETTINGS_SEARCH_ITEMS: SearchResultItem[] = [
   { id: "account", title: "Account", tab: "account", iconType: "account" },
   { id: "appearance", title: "Appearance", tab: "appearance", iconType: "appearance" },
+  { id: "llms", title: "LLMs", subtitle: "Local (Ollama, Qwen) & Cloud models", tab: "llms", iconType: "llms" },
   { id: "claude", title: "Your Claude", tab: "claude", iconType: "claude" },
   { id: "capabilities", title: "Capabilities", tab: "capabilities", iconType: "capabilities" },
   { id: "notifications", title: "Notifications", tab: "notifications", iconType: "notifications" },
@@ -119,6 +122,8 @@ function renderSearchIcon(type: SearchResultItem["iconType"]) {
       );
     case "code":
       return <HugeiconsIcon icon={CodeXmlIcon} size={15} strokeWidth={1.8} className="shrink-0 text-[#b5b5b5]" />;
+    case "llms":
+      return <HugeiconsIcon icon={AiBrain01Icon} size={15} strokeWidth={1.8} className="shrink-0 text-[#b5b5b5]" />;
   }
 }
 
@@ -384,6 +389,19 @@ export default function SettingsModal({
                     <polygon points="4,4 20,20 4,20" />
                   </svg>
                   <span>Appearance</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleTabSelect("llms")}
+                  className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-[13px] font-medium transition-colors cursor-pointer ${
+                    currentTab === "llms"
+                      ? "bg-[#303030] text-white"
+                      : "text-[#a0a0a0] hover:text-white hover:bg-[#242424]"
+                  }`}
+                >
+                  <HugeiconsIcon icon={AiBrain01Icon} size={15} strokeWidth={1.8} />
+                  <span>LLMs</span>
                 </button>
 
                 <button
@@ -706,6 +724,8 @@ export default function SettingsModal({
                   </div>
                 </div>
               </>
+            ) : currentTab === "llms" ? (
+              <LLMSettingsView />
             ) : (
               /* Other Tabs Placeholder */
               <div className="h-full flex flex-col items-center justify-center text-center py-16 text-[#7a7a7a]">
